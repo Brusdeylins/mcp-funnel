@@ -1,0 +1,14 @@
+services:
+  mcp-funnel:
+    build: .
+    container_name: mcp-funnel
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - SESSION_SECRET=${SESSION_SECRET:-}
+      - ADMIN_USER=${ADMIN_USER:-}
+      - ADMIN_PASS=${ADMIN_PASS:-}
+      - DATA_DIR=/data
+    volumes:
+      - ./data:/data
