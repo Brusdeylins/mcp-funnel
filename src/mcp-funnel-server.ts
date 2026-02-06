@@ -9,25 +9,29 @@ import connectSessionFileStore from "session-file-store"
 import cookieParser from "cookie-parser"
 import helmet from "helmet"
 import path from "path"
-import { McpFunnelConfig } from "./mcp-funnel-config"
-import { AuthManager } from "./mcp-funnel-auth"
-import { UserManager } from "./mcp-funnel-users"
-import { createSessionAuth } from "./middleware/session-auth"
-import { createApiKeyAuth } from "./middleware/api-key-auth"
-import { createAuthRoutes } from "./routes/auth-routes"
-import { createDashboardRoutes } from "./routes/dashboard-routes"
-import { createUserRoutes } from "./routes/user-routes"
-import { createMcpRoutes } from "./routes/mcp-routes"
-import { createSettingsRoutes } from "./routes/settings-routes"
-import logger from "./mcp-funnel-log"
+import { McpFunnelConfig } from "./mcp-funnel-config.js"
+import { AuthManager } from "./mcp-funnel-auth.js"
+import { UserManager } from "./mcp-funnel-users.js"
+import { createSessionAuth } from "./middleware/session-auth.js"
+import { StatsManager } from "./mcp-funnel-stats.js"
+import { createAuthRoutes } from "./routes/auth-routes.js"
+import { createDashboardRoutes } from "./routes/dashboard-routes.js"
+import { createUserRoutes } from "./routes/user-routes.js"
+import { createMcpRoutes } from "./routes/mcp-routes.js"
+import { createSettingsRoutes } from "./routes/settings-routes.js"
+import { UserProxyManager } from "./user-proxy-manager.js"
+import { createMcpProxyRoutes } from "./routes/mcp-proxy-routes.js"
+import logger from "./mcp-funnel-log.js"
 
 const FileStore = connectSessionFileStore(session)
 
-function createApp (config: McpFunnelConfig): express.Application {
+function createApp (config: McpFunnelConfig): { app: express.Application, statsManager: StatsManager, userProxyManager: UserProxyManager } {
     const app = express()
 
     const authManager = new AuthManager(config.dataDir)
     const userManager = new UserManager(authManager)
+    const statsManager = new StatsManager(config.dataDir)
+    const userProxyManager = new UserProxyManager(config.dataDir, statsManager)
 
     // Auto-create admin from env vars if needed
     if (config.adminUser && config.adminPass && authManager.isSetupRequired()) {
@@ -85,7 +89,6 @@ function createApp (config: McpFunnelConfig): express.Application {
 
     // Middleware factories
     const { requireAuth, requireAdmin, checkSetup } = createSessionAuth(authManager)
-    const { requireApiKey } = createApiKeyAuth(authManager)
 
     // Setup check — redirect to /setup if no admin exists
     app.use(checkSetup)
@@ -116,15 +119,13 @@ function createApp (config: McpFunnelConfig): express.Application {
 
     // Mount routes
     app.use("/", createAuthRoutes(authManager))
-    app.use("/dashboard", requireAuth, createDashboardRoutes(authManager, config))
-    app.use("/users", requireAuth, requireAdmin, createUserRoutes(userManager))
-    app.use("/mcp-servers", requireAuth, createMcpRoutes())
+    app.use("/dashboard", requireAuth, createDashboardRoutes(authManager, statsManager, config))
+    app.use("/users", requireAuth, requireAdmin, createUserRoutes(userManager, statsManager))
+    app.use("/mcp-servers", requireAuth, createMcpRoutes(userProxyManager))
     app.use("/settings", requireAuth, createSettingsRoutes(authManager))
 
-    // API key auth for future MCP endpoints (placeholder)
-    app.use("/api/mcp", requireApiKey, (_req, res) => {
-        res.json({ message: "MCP API endpoint — coming soon" })
-    })
+    // MCP protocol endpoint (API key authenticated)
+    app.use("/mcp", createMcpProxyRoutes(userProxyManager, authManager, statsManager))
 
     // 404
     app.use((req, res) => {
@@ -132,7 +133,7 @@ function createApp (config: McpFunnelConfig): express.Application {
         res.status(404).json({ error: "Not Found", path: req.path })
     })
 
-    return app
+    return { app, statsManager, userProxyManager }
 }
 
 export { createApp }

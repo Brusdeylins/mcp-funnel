@@ -5,8 +5,8 @@
 
 import bcrypt from "bcryptjs"
 import { v4 as uuidv4 } from "uuid"
-import { AuthManager, UserData, generateApiKey } from "./mcp-funnel-auth"
-import logger from "./mcp-funnel-log"
+import { AuthManager, UserData, generateApiKey } from "./mcp-funnel-auth.js"
+import logger from "./mcp-funnel-log.js"
 
 interface CreateUserInput {
     username: string

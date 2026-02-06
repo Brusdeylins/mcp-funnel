@@ -16,7 +16,7 @@ COPY package*.json ./
 RUN npm ci --omit=dev
 COPY --from=builder /app/dst ./dst
 EXPOSE 3000
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+HEALTHCHECK --interval=5s --timeout=3s --start-period=3s --retries=3 \
   CMD curl -f http://localhost:3000/health || exit 1
 ENV DATA_DIR=/data
 CMD ["node", "dst/mcp-funnel.js"]

@@ -1,0 +1,13 @@
+node_modules/
+dst/
+data/
+.env
+.git/
+.gitignore
+.dockerignore
+docker-compose.yml
+docker/
+gfx/
+CHANGELOG.md
+README.md
+LICENSE

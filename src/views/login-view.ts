@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // 100% AI-generated code (vibe-coding with Claude)
 
-import { MCP_LOGO_PATHS, MCP_FUNNEL_FAVICON } from "./layout-template"
+import { MCP_LOGO_PATHS, MCP_FUNNEL_FAVICON } from "./layout-template.js"
 
 function renderLoginPage (setupSuccess: boolean): string {
     const logoSvg = `<svg width="36" height="36" viewBox="0 0 1056 1022" xmlns="http://www.w3.org/2000/svg" class="text-primary" style="fill-rule:evenodd;clip-rule:evenodd;color:var(--tblr-primary);">${MCP_LOGO_PATHS}</svg>`

@@ -4,8 +4,8 @@
 // 100% AI-generated code (vibe-coding with Claude)
 
 import { Request, Response, NextFunction } from "express"
-import { AuthManager } from "../mcp-funnel-auth"
-import logger from "../mcp-funnel-log"
+import { AuthManager } from "../mcp-funnel-auth.js"
+import logger from "../mcp-funnel-log.js"
 
 function createSessionAuth (authManager: AuthManager) {
     function requireAuth (req: Request, res: Response, next: NextFunction): void {

@@ -6,9 +6,9 @@
 // 100% AI-generated code (vibe-coding with Claude)
 
 import { Command } from "commander"
-import { loadConfig } from "./mcp-funnel-config"
-import { createApp } from "./mcp-funnel-server"
-import logger from "./mcp-funnel-log"
+import { loadConfig } from "./mcp-funnel-config.js"
+import { createApp } from "./mcp-funnel-server.js"
+import logger from "./mcp-funnel-log.js"
 
 const pkg = { version: "1.0.0", description: "MCP-Funnel - Multi-user MCP server management" }
 
@@ -24,7 +24,7 @@ program
 const opts = program.opts<{ port?: number, dataDir?: string }>()
 const config = loadConfig(opts.port, opts.dataDir)
 
-const app = createApp(config)
+const { app, statsManager, userProxyManager } = createApp(config)
 
 const server = app.listen(config.port, "0.0.0.0", () => {
     logger.info("═══════════════════════════════════════")
@@ -39,19 +39,29 @@ const server = app.listen(config.port, "0.0.0.0", () => {
 
 process.on("SIGTERM", () => {
     logger.info("SIGTERM received, shutting down...")
-    server.close(() => {
-        logger.info("Server closed")
-        process.exit(0)
-    })
-    setTimeout(() => { process.exit(1) }, 10000)
+    userProxyManager.shutdown()
+        .catch(err => logger.error(`Proxy shutdown error: ${err instanceof Error ? err.message : String(err)}`))
+        .finally(() => {
+            statsManager.flush()
+            server.close(() => {
+                logger.info("Server closed")
+                process.exit(0)
+            })
+            setTimeout(() => { process.exit(1) }, 10000)
+        })
 })
 
 process.on("SIGINT", () => {
     logger.info("SIGINT received, shutting down...")
-    server.close(() => {
-        logger.info("Server closed")
-        process.exit(0)
-    })
+    userProxyManager.shutdown()
+        .catch(err => logger.error(`Proxy shutdown error: ${err instanceof Error ? err.message : String(err)}`))
+        .finally(() => {
+            statsManager.flush()
+            server.close(() => {
+                logger.info("Server closed")
+                process.exit(0)
+            })
+        })
 })
 
 process.on("uncaughtException", (error) => {

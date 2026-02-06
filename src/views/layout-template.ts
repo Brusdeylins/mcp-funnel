@@ -9,6 +9,7 @@ interface LayoutOptions {
     currentPage?: string
     scripts?: string
     role?: "admin" | "user"
+    username?: string
 }
 
 // Inline SVG logo paths extracted from gfx/mcp-w.svg (viewBox="0 0 1056 1022")
@@ -40,7 +41,7 @@ function getThemeIcon (): string {
     return "<path stroke=\"none\" d=\"M0 0h24v24H0z\" fill=\"none\"/><path d=\"M12 12m-4 0a4 4 0 1 0 8 0a4 4 0 1 0 -8 0\" /><path d=\"M3 12h1m8 -9v1m8 8h1m-9 8v1m-6.4 -15.4l.7 .7m12.1 -.7l-.7 .7m0 11.4l.7 .7m-12.1 -.7l-.7 .7\" />"
 }
 
-function generateSidebar (currentPage: string, role: "admin" | "user"): string {
+function generateSidebar (currentPage: string, role: "admin" | "user", username: string): string {
     interface MenuItem {
         id: string
         icon: string
@@ -81,7 +82,16 @@ function generateSidebar (currentPage: string, role: "admin" | "user"): string {
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#sidebar-menu" aria-controls="sidebar-menu" aria-expanded="false" aria-label="Toggle navigation">
           <span class="navbar-toggler-icon"></span>
         </button>
-        <h1 class="navbar-brand navbar-brand-autodark">
+        <div class="d-flex flex-column align-items-center w-100 d-none d-lg-flex">
+          <h1 class="navbar-brand navbar-brand-autodark mb-0">
+            <a href="/dashboard" class="d-flex align-items-center" style="color: inherit; text-decoration: none;">
+              ${inlineLogo(28, "me-2")}
+              <span class="navbar-brand-text">MCP-Funnel</span>
+            </a>
+          </h1>
+          <small class="text-secondary" style="font-size: 0.65rem; opacity: 0.5; margin-top: -0.25rem;">v1.0.0</small>
+        </div>
+        <h1 class="navbar-brand navbar-brand-autodark d-lg-none mb-0">
           <a href="/dashboard" class="d-flex align-items-center" style="color: inherit; text-decoration: none;">
             ${inlineLogo(28, "me-2")}
             <span class="navbar-brand-text">MCP-Funnel</span>
@@ -128,7 +138,7 @@ function generateSidebar (currentPage: string, role: "admin" | "user"): string {
                       <path d="M18 15l3 -3" />
                     </svg>
                   </span>
-                  <span class="nav-link-title">Logout</span>
+                  <span class="nav-link-title">Logout (${username})</span>
                 </a>
               </li>
             </ul>
@@ -154,7 +164,7 @@ function generatePageHeader (title: string, subtitle = "", actions = ""): string
 }
 
 function generateLayout (opts: LayoutOptions): string {
-    const { title, content, currentPage = "dashboard", scripts = "", role = "admin" } = opts
+    const { title, content, currentPage = "dashboard", scripts = "", role = "admin", username = "" } = opts
     return `<!doctype html>
 <html lang="en">
 <head>
@@ -180,7 +190,7 @@ function generateLayout (opts: LayoutOptions): string {
 </head>
 <body>
   <div class="page">
-    ${generateSidebar(currentPage, role)}
+    ${generateSidebar(currentPage, role, username)}
     <div class="page-wrapper">
       ${content}
     </div>

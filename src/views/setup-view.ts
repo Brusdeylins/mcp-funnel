@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // 100% AI-generated code (vibe-coding with Claude)
 
-import { MCP_LOGO_PATHS, MCP_FUNNEL_FAVICON } from "./layout-template"
+import { MCP_LOGO_PATHS, MCP_FUNNEL_FAVICON } from "./layout-template.js"
 
 function renderSetupPage (): string {
     // Logo adapts to theme via currentColor; in dark mode text is white, in light mode black

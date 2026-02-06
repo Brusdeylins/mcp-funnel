@@ -4,12 +4,13 @@
 // 100% AI-generated code (vibe-coding with Claude)
 
 import { Router, Request, Response } from "express"
-import { AuthManager } from "../mcp-funnel-auth"
-import { McpFunnelConfig } from "../mcp-funnel-config"
-import { renderDashboardPage } from "../views/dashboard-view"
-import logger from "../mcp-funnel-log"
+import { AuthManager } from "../mcp-funnel-auth.js"
+import { StatsManager } from "../mcp-funnel-stats.js"
+import { McpFunnelConfig } from "../mcp-funnel-config.js"
+import { renderDashboardPage } from "../views/dashboard-view.js"
+import logger from "../mcp-funnel-log.js"
 
-function createDashboardRoutes (authManager: AuthManager, _config: McpFunnelConfig): Router {
+function createDashboardRoutes (authManager: AuthManager, statsManager: StatsManager, _config: McpFunnelConfig): Router {
     const router = Router()
 
     // GET /dashboard
@@ -19,9 +20,10 @@ function createDashboardRoutes (authManager: AuthManager, _config: McpFunnelConf
         const username = req.session.username || "admin"
 
         const apiKey = authManager.getApiKeyForUser(userId)
-        const mcpEndpoint = `${req.protocol}://${req.get("host") || "localhost"}/api/mcp`
+        const mcpEndpoint = `${req.protocol}://${req.get("host") || "localhost"}/mcp`
+        const stats = statsManager.getUserStats(userId)
 
-        res.send(renderDashboardPage({ apiKey, role, username, mcpEndpoint }))
+        res.send(renderDashboardPage({ apiKey, role, username, mcpEndpoint, stats }))
     })
 
     // POST /dashboard/api/regenerate-key

@@ -6,7 +6,7 @@
 import fs from "fs"
 import path from "path"
 import crypto from "crypto"
-import logger from "./mcp-funnel-log"
+import logger from "./mcp-funnel-log.js"
 
 interface McpFunnelConfig {
     port: number

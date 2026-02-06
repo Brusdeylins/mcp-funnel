@@ -4,22 +4,29 @@
 // 100% AI-generated code (vibe-coding with Claude)
 
 import { Router, Request, Response } from "express"
-import { UserManager } from "../mcp-funnel-users"
-import { renderUsersPage } from "../views/users-view"
-import logger from "../mcp-funnel-log"
+import { UserManager } from "../mcp-funnel-users.js"
+import { StatsManager } from "../mcp-funnel-stats.js"
+import { renderUsersPage } from "../views/users-view.js"
+import logger from "../mcp-funnel-log.js"
 
-function createUserRoutes (userManager: UserManager): Router {
+function createUserRoutes (userManager: UserManager, statsManager: StatsManager): Router {
     const router = Router()
 
     // GET /users/manage
-    router.get("/manage", (_req: Request, res: Response) => {
-        res.send(renderUsersPage())
+    router.get("/manage", (req: Request, res: Response) => {
+        const username = req.session.username || ""
+        res.send(renderUsersPage(username))
     })
 
     // GET /users/api/list
     router.get("/api/list", (_req: Request, res: Response) => {
         const users = userManager.listUsers()
-        res.json(users)
+        const counts = statsManager.getAllRequestCounts()
+        const enriched = users.map(u => ({
+            ...u,
+            requestCount: counts[u.id] || 0
+        }))
+        res.json(enriched)
     })
 
     // POST /users/api/create

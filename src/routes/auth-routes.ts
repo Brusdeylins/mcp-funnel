@@ -4,10 +4,10 @@
 // 100% AI-generated code (vibe-coding with Claude)
 
 import { Router, Request, Response } from "express"
-import { AuthManager } from "../mcp-funnel-auth"
-import { renderSetupPage } from "../views/setup-view"
-import { renderLoginPage } from "../views/login-view"
-import logger from "../mcp-funnel-log"
+import { AuthManager } from "../mcp-funnel-auth.js"
+import { renderSetupPage } from "../views/setup-view.js"
+import { renderLoginPage } from "../views/login-view.js"
+import logger from "../mcp-funnel-log.js"
 
 function createAuthRoutes (authManager: AuthManager): Router {
     const router = Router()
@@ -68,7 +68,12 @@ function createAuthRoutes (authManager: AuthManager): Router {
             const result = await authManager.validateCredentials(username, password)
             if (!result) {
                 logger.warn(`Failed login attempt for user: ${username}`)
-                res.status(401).json({ error: "Invalid credentials" })
+                res.status(401).json({ error: "Invalid username or password" })
+                return
+            }
+            if (result.disabled) {
+                logger.warn(`Login attempt for disabled user: ${username}`)
+                res.status(403).json({ error: "Account is disabled. Contact an administrator." })
                 return
             }
 

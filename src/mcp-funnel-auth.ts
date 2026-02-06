@@ -7,7 +7,7 @@ import fs from "fs"
 import path from "path"
 import bcrypt from "bcryptjs"
 import crypto from "crypto"
-import logger from "./mcp-funnel-log"
+import logger from "./mcp-funnel-log.js"
 
 interface AdminData {
     username: string
@@ -109,26 +109,29 @@ class AuthManager {
         return true
     }
 
-    async validateCredentials (username: string, password: string): Promise<{ valid: boolean, userId: string, role: "admin" | "user" } | null> {
+    async validateCredentials (username: string, password: string): Promise<{ valid: boolean, userId: string, role: "admin" | "user", disabled: boolean } | null> {
         const authData = this.loadAuthData()
 
         // Check admin
         if (authData.admin.username === username && authData.admin.passwordHash) {
             const valid = await bcrypt.compare(password, authData.admin.passwordHash)
             if (valid) {
-                return { valid: true, userId: "admin", role: "admin" }
+                return { valid: true, userId: "admin", role: "admin", disabled: false }
             }
         }
 
         // Check users
         for (const user of authData.users) {
-            if (user.username === username && user.enabled) {
+            if (user.username === username) {
                 const valid = await bcrypt.compare(password, user.passwordHash)
                 if (valid) {
+                    if (!user.enabled) {
+                        return { valid: false, userId: user.id, role: "user", disabled: true }
+                    }
                     // Update lastLogin
                     user.lastLogin = new Date().toISOString()
                     this.saveAuthData(authData)
-                    return { valid: true, userId: user.id, role: "user" }
+                    return { valid: true, userId: user.id, role: "user", disabled: false }
                 }
             }
         }

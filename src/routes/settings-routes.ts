@@ -4,9 +4,9 @@
 // 100% AI-generated code (vibe-coding with Claude)
 
 import { Router, Request, Response } from "express"
-import { AuthManager } from "../mcp-funnel-auth"
-import { renderSettingsPage } from "../views/settings-view"
-import logger from "../mcp-funnel-log"
+import { AuthManager } from "../mcp-funnel-auth.js"
+import { renderSettingsPage } from "../views/settings-view.js"
+import logger from "../mcp-funnel-log.js"
 
 function createSettingsRoutes (authManager: AuthManager): Router {
     const router = Router()
@@ -14,7 +14,8 @@ function createSettingsRoutes (authManager: AuthManager): Router {
     // GET /settings
     router.get("/", (req: Request, res: Response) => {
         const role = req.session.role || "user"
-        res.send(renderSettingsPage(role))
+        const username = req.session.username || ""
+        res.send(renderSettingsPage(role, username))
     })
 
     // POST /settings/api/change-password

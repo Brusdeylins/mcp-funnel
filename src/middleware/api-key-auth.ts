@@ -4,10 +4,11 @@
 // 100% AI-generated code (vibe-coding with Claude)
 
 import { Request, Response, NextFunction } from "express"
-import { AuthManager } from "../mcp-funnel-auth"
-import logger from "../mcp-funnel-log"
+import { AuthManager } from "../mcp-funnel-auth.js"
+import { StatsManager } from "../mcp-funnel-stats.js"
+import logger from "../mcp-funnel-log.js"
 
-function createApiKeyAuth (authManager: AuthManager) {
+function createApiKeyAuth (authManager: AuthManager, statsManager: StatsManager) {
     function requireApiKey (req: Request, res: Response, next: NextFunction): void {
         if (req.method === "OPTIONS") {
             next()
@@ -46,8 +47,8 @@ function createApiKeyAuth (authManager: AuthManager) {
         }
 
         // Attach user info to request for downstream use
-        // @ts-ignore -- extending req with custom property for downstream handlers
         req.apiKeyUser = result
+        statsManager.incrementRequests(result.userId)
         logger.debug(`Valid API key used by: ${result.username}`)
         next()
     }

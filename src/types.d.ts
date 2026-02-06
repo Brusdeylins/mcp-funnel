@@ -13,3 +13,11 @@ declare module "express-session" {
         username: string
     }
 }
+
+declare global {
+    namespace Express {
+        interface Request {
+            apiKeyUser?: { valid: boolean; userId: string; username: string }
+        }
+    }
+}
