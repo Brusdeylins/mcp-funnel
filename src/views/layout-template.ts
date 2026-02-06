@@ -1,5 +1,7 @@
-// MCP-Funnel Layout Template (based on Tabler UI)
-// Uses custom MCP-Funnel logo (gfx/mcp-b.svg for light, gfx/mcp-w.svg for dark)
+// MCP-Funnel — Multi-user MCP server management
+// Copyright (c) 2026 Matthias Brusdeylins
+// SPDX-License-Identifier: GPL-3.0-only
+// 100% AI-generated code (vibe-coding with Claude)
 
 interface LayoutOptions {
     title: string

@@ -1,3 +1,8 @@
+// MCP-Funnel — Multi-user MCP server management
+// Copyright (c) 2026 Matthias Brusdeylins
+// SPDX-License-Identifier: GPL-3.0-only
+// 100% AI-generated code (vibe-coding with Claude)
+
 import { Request, Response, NextFunction } from "express"
 import { AuthManager } from "../mcp-funnel-auth"
 import logger from "../mcp-funnel-log"

@@ -1,3 +1,8 @@
+// MCP-Funnel — Multi-user MCP server management
+// Copyright (c) 2026 Matthias Brusdeylins
+// SPDX-License-Identifier: GPL-3.0-only
+// 100% AI-generated code (vibe-coding with Claude)
+
 import bcrypt from "bcryptjs"
 import { v4 as uuidv4 } from "uuid"
 import { AuthManager, UserData, generateApiKey } from "./mcp-funnel-auth"

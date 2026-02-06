@@ -1,5 +1,10 @@
 #!/usr/bin/env node
 
+// MCP-Funnel — Multi-user MCP server management
+// Copyright (c) 2026 Matthias Brusdeylins
+// SPDX-License-Identifier: GPL-3.0-only
+// 100% AI-generated code (vibe-coding with Claude)
+
 import { Command } from "commander"
 import { loadConfig } from "./mcp-funnel-config"
 import { createApp } from "./mcp-funnel-server"
