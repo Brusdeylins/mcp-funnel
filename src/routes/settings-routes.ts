@@ -11,14 +11,14 @@ import logger from "../mcp-funnel-log.js"
 function createSettingsRoutes (authManager: AuthManager): Router {
     const router = Router()
 
-    // GET /settings
+    /* GET /settings */
     router.get("/", (req: Request, res: Response) => {
         const role = req.session.role || "user"
         const username = req.session.username || ""
         res.send(renderSettingsPage(role, username))
     })
 
-    // POST /settings/api/change-password
+    /* POST /settings/api/change-password */
     router.post("/api/change-password", async (req: Request, res: Response) => {
         try {
             const userId = req.session.userId || "admin"

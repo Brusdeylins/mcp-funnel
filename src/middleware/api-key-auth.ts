@@ -38,7 +38,7 @@ function createApiKeyAuth (authManager: AuthManager, statsManager: StatsManager)
 
         const result = authManager.validateApiKey(token)
         if (!result) {
-            logger.warn(`Invalid API key attempt: ${token.substring(0, 10)}...`)
+            logger.warn(`Invalid API key attempt: ${token.substring(0, 8)}...`)
             res.status(401).json({
                 error: "Invalid API key",
                 message: "The provided API key is not valid"
@@ -46,7 +46,7 @@ function createApiKeyAuth (authManager: AuthManager, statsManager: StatsManager)
             return
         }
 
-        // Attach user info to request for downstream use
+        /* Attach user info to request for downstream use */
         req.apiKeyUser = result
         statsManager.incrementRequests(result.userId)
         logger.debug(`Valid API key used by: ${result.username}`)

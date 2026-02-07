@@ -112,7 +112,6 @@ class McpProxyService {
 
             if (msg.includes("Failed to open SSE stream")
                 || msg.includes("SSE stream disconnected")
-                || msg.includes("SSE")
                 || msg.includes("AbortError")) {
                 logger.debug(`[${this.userId}] MCP SSE event for ${server.name}: ${msg} (non-critical)`)
                 return
@@ -147,7 +146,7 @@ class McpProxyService {
             let tools: ToolWithServer[] = []
             if (capabilities?.tools) {
                 const toolsResult = await client.listTools()
-                tools = (toolsResult.tools || []).map(tool => ({
+                tools = (toolsResult.tools || []).map((tool) => ({
                     ...tool,
                     description: tool.description || "",
                     _serverId: server.id,
@@ -186,7 +185,7 @@ class McpProxyService {
                 await transport.close()
             }
             catch {
-                // Ignore close errors
+                /* Ignore close errors */
             }
             throw error
         }
@@ -223,7 +222,7 @@ class McpProxyService {
         const allTools: ToolWithServer[] = []
         for (const [serverId, conn] of this.connections.entries()) {
             const disabledTools = this.serverManager.getDisabledTools(serverId)
-            const enabledTools = conn.tools.filter(t => !disabledTools.includes(t.name))
+            const enabledTools = conn.tools.filter((t) => !disabledTools.includes(t.name))
             allTools.push(...enabledTools)
         }
         return allTools
@@ -239,7 +238,7 @@ class McpProxyService {
     }
 
     private getToolSchema (toolName: string) {
-        const tool = this.getAllToolsInternal().find(t => t.name === toolName)
+        const tool = this.getAllToolsInternal().find((t) => t.name === toolName)
         if (!tool) {
             return { error: `Tool not found: ${toolName}` }
         }
@@ -256,7 +255,7 @@ class McpProxyService {
             case "mcp_discover_tools": {
                 const tools = this.discoverTools(args.words as SearchWords, (args.limit as number) || 10)
                 const resultText = tools.length > 0 ?
-                    `Found ${tools.length} tools:\n${tools.map(t => `- ${t.name}: ${t.description}`).join("\n")}` :
+                    `Found ${tools.length} tools:\n${tools.map((t) => `- ${t.name}: ${t.description}`).join("\n")}` :
                     "No tools found matching keywords. Try different or fewer keywords."
                 return { content: [{ type: "text", text: resultText }] }
             }
@@ -281,7 +280,7 @@ class McpProxyService {
         }
 
         const disabledTools = this.serverManager.getDisabledTools(serverId)
-        const tools = conn.tools.map(t => ({
+        const tools = conn.tools.map((t) => ({
             name: t.name,
             description: t.description,
             disabled: disabledTools.includes(t.name)
@@ -297,7 +296,7 @@ class McpProxyService {
 
     private findToolServer (toolName: string): { serverId: string; tool: ToolWithServer; client: Client } | null {
         for (const [serverId, conn] of this.connections.entries()) {
-            const tool = conn.tools.find(t => t.name === toolName)
+            const tool = conn.tools.find((t) => t.name === toolName)
             if (tool) {
                 return { serverId, tool, client: conn.client }
             }
@@ -499,7 +498,7 @@ class McpProxyService {
             if (caps?.prompts) {
                 try {
                     const result = await conn.client.listPrompts()
-                    const prompts = (result.prompts || []).map(p => ({
+                    const prompts = (result.prompts || []).map((p) => ({
                         ...p,
                         _serverId: serverId,
                         _serverName: conn.serverInfo?.name
@@ -522,7 +521,7 @@ class McpProxyService {
             if (caps?.resources) {
                 try {
                     const result = await conn.client.listResources()
-                    const resources = (result.resources || []).map(r => ({
+                    const resources = (result.resources || []).map((r) => ({
                         ...r,
                         _serverId: serverId,
                         _serverName: conn.serverInfo?.name
@@ -605,7 +604,7 @@ class McpProxyService {
                                 return { jsonrpc: "2.0", id, result }
                             }
                             catch {
-                            // Try next server
+                                /* Try next server */
                             }
                         }
                     }
@@ -634,7 +633,7 @@ class McpProxyService {
                                 return { jsonrpc: "2.0", id, result }
                             }
                             catch {
-                            // Try next server
+                                /* Try next server */
                             }
                         }
                     }
@@ -708,7 +707,7 @@ class McpProxyService {
         toolCount: number; serverInfo: unknown; lastConnected: string | null; lastError: string | null
     }> {
         const servers = this.serverManager.getServers()
-        return servers.map(server => {
+        return servers.map((server) => {
             const conn = this.connections.get(server.id)
             const isConnected = !!conn
             const state = this.reconnectState.get(server.id)
@@ -759,11 +758,13 @@ class McpProxyService {
             )
 
             const connectPromise = client.connect(transport)
-            const timeoutPromise = new Promise<never>((_resolve, reject) =>
-                setTimeout(() => reject(new Error("Connection timeout (10s)")), 10000)
-            )
+            let timeoutHandle: ReturnType<typeof setTimeout>
+            const timeoutPromise = new Promise<never>((_resolve, reject) => {
+                timeoutHandle = setTimeout(() => reject(new Error("Connection timeout (10s)")), 10000)
+            })
 
             await Promise.race([connectPromise, timeoutPromise])
+            clearTimeout(timeoutHandle!)
 
             const serverInfo = client.getServerVersion() as { name?: string; version?: string } | undefined
             const capabilities = client.getServerCapabilities() as Record<string, unknown> | undefined
@@ -780,13 +781,13 @@ class McpProxyService {
                 }
             }
             catch {
-                // Ignore
+                /* Ignore */
             }
             try {
                 await transport.close()
             }
             catch {
-                // Ignore
+                /* Ignore */
             }
 
             return {
@@ -798,11 +799,11 @@ class McpProxyService {
         catch (error) {
             if (client && typeof client.close === "function") {
                 try { await client.close() }
-                catch { /* Ignore */ }
+                catch { /* ignore */ }
             }
             if (transport) {
                 try { await transport.close() }
-                catch { /* Ignore */ }
+                catch { /* ignore */ }
             }
             return {
                 success: false,
@@ -827,7 +828,7 @@ class McpProxyService {
         let total = 0
         for (const [serverId, conn] of this.connections.entries()) {
             const disabledTools = this.serverManager.getDisabledTools(serverId)
-            total += conn.tools.filter(t => !disabledTools.includes(t.name)).length
+            total += conn.tools.filter((t) => !disabledTools.includes(t.name)).length
         }
         return total
     }
@@ -835,4 +836,3 @@ class McpProxyService {
 
 export { McpProxyService }
 export type { JsonRpcRequest, JsonRpcResponse }
-export type { META_TOOLS }

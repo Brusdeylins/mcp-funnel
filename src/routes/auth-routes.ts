@@ -12,7 +12,7 @@ import logger from "../mcp-funnel-log.js"
 function createAuthRoutes (authManager: AuthManager): Router {
     const router = Router()
 
-    // GET /setup
+    /* GET /setup */
     router.get("/setup", (_req: Request, res: Response) => {
         if (!authManager.isSetupRequired()) {
             res.redirect("/login")
@@ -21,7 +21,7 @@ function createAuthRoutes (authManager: AuthManager): Router {
         res.send(renderSetupPage())
     })
 
-    // POST /setup
+    /* POST /setup */
     router.post("/setup", async (req: Request, res: Response) => {
         try {
             if (!authManager.isSetupRequired()) {
@@ -46,7 +46,7 @@ function createAuthRoutes (authManager: AuthManager): Router {
         }
     })
 
-    // GET /login
+    /* GET /login */
     router.get("/login", (req: Request, res: Response) => {
         if (authManager.isSetupRequired()) {
             res.redirect("/setup")
@@ -56,7 +56,7 @@ function createAuthRoutes (authManager: AuthManager): Router {
         res.send(renderLoginPage(setupSuccess))
     })
 
-    // POST /login
+    /* POST /login */
     router.post("/login", async (req: Request, res: Response) => {
         try {
             const { username, password } = req.body as { username: string, password: string }
@@ -92,12 +92,13 @@ function createAuthRoutes (authManager: AuthManager): Router {
         }
     })
 
-    // GET /logout
+    /* GET /logout */
     router.get("/logout", (req: Request, res: Response) => {
         req.session.destroy((err) => {
             if (err) {
                 logger.error(`Logout error: ${err.message}`)
             }
+            res.clearCookie("connect.sid")
             res.redirect("/login")
         })
     })

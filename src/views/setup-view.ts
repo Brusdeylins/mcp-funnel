@@ -6,7 +6,7 @@
 import { MCP_LOGO_PATHS, MCP_FUNNEL_FAVICON } from "./layout-template.js"
 
 function renderSetupPage (): string {
-    // Logo adapts to theme via currentColor; in dark mode text is white, in light mode black
+    /* Logo adapts to theme via currentColor; in dark mode text is white, in light mode black */
     const logoSvg = `<svg width="36" height="36" viewBox="0 0 1056 1022" xmlns="http://www.w3.org/2000/svg" class="text-primary" style="fill-rule:evenodd;clip-rule:evenodd;color:var(--tblr-primary);">${MCP_LOGO_PATHS}</svg>`
 
     return `<!DOCTYPE html>

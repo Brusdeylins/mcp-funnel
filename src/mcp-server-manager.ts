@@ -32,6 +32,13 @@ interface ServerData {
     servers: McpServerEntry[]
 }
 
+function trimConfigUrl<T extends { url?: string }> (config: T): T {
+    if (config && config.url) {
+        return { ...config, url: config.url.trim().replace(/\/+$/, "") }
+    }
+    return config
+}
+
 class McpServerManager {
     private filePath: string
 
@@ -59,7 +66,7 @@ class McpServerManager {
             const parsed = JSON.parse(raw) as ServerData
 
             if (parsed.servers && Array.isArray(parsed.servers)) {
-                parsed.servers.forEach(server => {
+                parsed.servers.forEach((server) => {
                     if (server.config && server.config.url) {
                         server.config.url = server.config.url.trim().replace(/\/+$/, "")
                     }
@@ -85,10 +92,7 @@ class McpServerManager {
     }
 
     private trimConfigUrl (config: ServerConfig): ServerConfig {
-        if (config && config.url) {
-            return { ...config, url: config.url.trim().replace(/\/+$/, "") }
-        }
-        return config
+        return trimConfigUrl(config)
     }
 
     private validateConfig (type: ServerType, config: ServerConfig): void {
@@ -108,12 +112,12 @@ class McpServerManager {
 
     getEnabledServers (): McpServerEntry[] {
         const data = this.loadData()
-        return data.servers.filter(s => s.enabled)
+        return data.servers.filter((s) => s.enabled)
     }
 
     getServer (id: string): McpServerEntry | undefined {
         const data = this.loadData()
-        return data.servers.find(s => s.id === id)
+        return data.servers.find((s) => s.id === id)
     }
 
     addServer (serverConfig: { name: string; type: ServerType; config: ServerConfig }): McpServerEntry {
@@ -153,7 +157,7 @@ class McpServerManager {
 
     updateServer (id: string, updates: { name?: string; enabled?: boolean; config?: ServerConfig }): McpServerEntry {
         const data = this.loadData()
-        const index = data.servers.findIndex(s => s.id === id)
+        const index = data.servers.findIndex((s) => s.id === id)
 
         if (index === -1) {
             throw new Error("MCP server not found")
@@ -180,7 +184,7 @@ class McpServerManager {
 
     deleteServer (id: string): boolean {
         const data = this.loadData()
-        const index = data.servers.findIndex(s => s.id === id)
+        const index = data.servers.findIndex((s) => s.id === id)
 
         if (index === -1) {
             throw new Error("MCP server not found")
@@ -195,7 +199,7 @@ class McpServerManager {
 
     toggleServer (id: string): McpServerEntry {
         const data = this.loadData()
-        const server = data.servers.find(s => s.id === id)
+        const server = data.servers.find((s) => s.id === id)
 
         if (!server) {
             throw new Error("MCP server not found")
@@ -211,7 +215,7 @@ class McpServerManager {
 
     updateConnectionStatus (id: string, success: boolean, error: string | null = null): void {
         const data = this.loadData()
-        const server = data.servers.find(s => s.id === id)
+        const server = data.servers.find((s) => s.id === id)
 
         if (!server) return
 
@@ -228,7 +232,7 @@ class McpServerManager {
 
     updateDisabledTools (id: string, disabledTools: string[]): McpServerEntry {
         const data = this.loadData()
-        const server = data.servers.find(s => s.id === id)
+        const server = data.servers.find((s) => s.id === id)
 
         if (!server) {
             throw new Error("MCP server not found")
@@ -260,5 +264,5 @@ class McpServerManager {
     }
 }
 
-export { McpServerManager }
+export { McpServerManager, trimConfigUrl }
 export type { ServerType, ServerConfig, McpServerEntry }

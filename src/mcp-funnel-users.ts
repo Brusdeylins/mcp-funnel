@@ -37,7 +37,7 @@ class UserManager {
 
     listUsers (): UserInfo[] {
         const authData = this.authManager.loadAuthData()
-        return authData.users.map(u => ({
+        return authData.users.map((u) => ({
             id: u.id,
             username: u.username,
             apiKey: u.apiKey,
@@ -58,11 +58,11 @@ class UserManager {
 
         const authData = this.authManager.loadAuthData()
 
-        // Check for duplicate username
+        /* Check for duplicate username */
         if (authData.admin.username === input.username) {
             throw new Error("Username already exists")
         }
-        if (authData.users.some(u => u.username === input.username)) {
+        if (authData.users.some((u) => u.username === input.username)) {
             throw new Error("Username already exists")
         }
 
@@ -97,7 +97,7 @@ class UserManager {
 
     async updateUser (id: string, input: UpdateUserInput): Promise<UserInfo> {
         const authData = this.authManager.loadAuthData()
-        const user = authData.users.find(u => u.id === id)
+        const user = authData.users.find((u) => u.id === id)
 
         if (!user) {
             throw new Error("User not found")
@@ -131,7 +131,7 @@ class UserManager {
 
     deleteUser (id: string): boolean {
         const authData = this.authManager.loadAuthData()
-        const index = authData.users.findIndex(u => u.id === id)
+        const index = authData.users.findIndex((u) => u.id === id)
 
         if (index === -1) {
             throw new Error("User not found")

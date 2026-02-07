@@ -102,7 +102,7 @@ const META_TOOLS = [
 ]
 
 function isMetaTool (toolName: string): boolean {
-    return META_TOOLS.some(t => t.name === toolName)
+    return META_TOOLS.some((t) => t.name === toolName)
 }
 
 function getMetaTools (): typeof META_TOOLS {
@@ -114,15 +114,15 @@ function parseWordsParameter (words: SearchWords): { keywords: string[], mode: "
     let mode: "and" | "or" = "and"
 
     if (typeof words === "string") {
-        keywords = words.toLowerCase().split(/\s+/).filter(w => w.length > 0)
+        keywords = words.toLowerCase().split(/\s+/).filter((w) => w.length > 0)
     }
     else if (typeof words === "object" && words !== null) {
         if ("and" in words && Array.isArray(words.and)) {
-            keywords = words.and.map(k => k.toLowerCase())
+            keywords = words.and.map((k) => k.toLowerCase())
             mode = "and"
         }
         else if ("or" in words && Array.isArray(words.or)) {
-            keywords = words.or.map(k => k.toLowerCase())
+            keywords = words.or.map((k) => k.toLowerCase())
             mode = "or"
         }
         else {
@@ -140,10 +140,10 @@ function matchesKeywords (tool: ToolWithServer, keywords: string[], mode: "and" 
     const searchText = `${tool.name || ""} ${tool.description || ""} ${tool._serverName || ""}`.toLowerCase()
 
     if (mode === "or") {
-        return keywords.some(kw => searchText.includes(kw))
+        return keywords.some((kw) => searchText.includes(kw))
     }
     else {
-        return keywords.every(kw => searchText.includes(kw))
+        return keywords.every((kw) => searchText.includes(kw))
     }
 }
 
@@ -166,7 +166,7 @@ function searchTools (allTools: ToolWithServer[], words: SearchWords, limit = 10
     const { keywords, mode } = parseWordsParameter(words)
 
     if (keywords.length === 0) {
-        return allTools.slice(0, limit).map(t => ({
+        return allTools.slice(0, limit).map((t) => ({
             name: t.name,
             description: truncateDescription(t.description),
             server: t._serverName
@@ -174,9 +174,9 @@ function searchTools (allTools: ToolWithServer[], words: SearchWords, limit = 10
     }
 
     return allTools
-        .filter(tool => matchesKeywords(tool, keywords, mode))
+        .filter((tool) => matchesKeywords(tool, keywords, mode))
         .slice(0, limit)
-        .map(t => ({
+        .map((t) => ({
             name: t.name,
             description: truncateDescription(t.description),
             server: t._serverName

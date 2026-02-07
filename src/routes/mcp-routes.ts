@@ -6,14 +6,8 @@
 import { Router, Request, Response } from "express"
 import { UserProxyManager } from "../user-proxy-manager.js"
 import { renderMcpServersPage } from "../views/mcp-servers-view.js"
+import { trimConfigUrl } from "../mcp-server-manager.js"
 import logger from "../mcp-funnel-log.js"
-
-function trimConfigUrl (config: { url?: string; headers?: Record<string, string> }): { url?: string; headers?: Record<string, string> } {
-    if (config && config.url) {
-        return { ...config, url: config.url.trim().replace(/\/+$/, "") }
-    }
-    return config
-}
 
 function createMcpRoutes (userProxyManager: UserProxyManager): Router {
     const router = Router()
@@ -22,14 +16,14 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
         return req.session.userId || "admin"
     }
 
-    // GET /mcp-servers/manage
+    /* GET /mcp-servers/manage */
     router.get("/manage", (req: Request, res: Response) => {
         const role = req.session.role || "user"
         const username = req.session.username || ""
         res.send(renderMcpServersPage(role, username))
     })
 
-    // GET /mcp-servers/api/list
+    /* GET /mcp-servers/api/list */
     router.get("/api/list", async (req: Request, res: Response) => {
         try {
             const userId = getUserId(req)
@@ -37,7 +31,7 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
             const servers = serverManager.getServers()
 
             const statusMap = new Map<string, unknown>()
-            if (userProxyManager.isInitialized(userId)) {
+            if (servers.length > 0) {
                 const proxy = await userProxyManager.getProxy(userId)
                 const status = proxy.getStatus()
                 for (const s of status) {
@@ -45,7 +39,7 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
                 }
             }
 
-            const enriched = servers.map(server => {
+            const enriched = servers.map((server) => {
                 const st = statusMap.get(server.id) as Record<string, unknown> | undefined
                 return {
                     ...server,
@@ -66,7 +60,7 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
         }
     })
 
-    // POST /mcp-servers/api/test
+    /* POST /mcp-servers/api/test */
     router.post("/api/test", async (req: Request, res: Response) => {
         try {
             const { type } = req.body as { type: string }
@@ -102,7 +96,7 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
         }
     })
 
-    // POST /mcp-servers/api/create
+    /* POST /mcp-servers/api/create */
     router.post("/api/create", async (req: Request, res: Response) => {
         try {
             const { name, type } = req.body as { name: string; type: string }
@@ -117,7 +111,7 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
             const proxy = await userProxyManager.getProxy(userId)
             const serverManager = userProxyManager.getServerManager(userId)
 
-            // Test connection first
+            /* Test connection first */
             logger.info(`[${userId}] Testing MCP connection before adding: ${name} (${type})`)
             const testResult = await proxy.testConnection({ type, config: config as { url: string; headers?: Record<string, string> } })
 
@@ -127,11 +121,11 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
                 return
             }
 
-            // Save the server
+            /* Save the server */
             const newServer = serverManager.addServer({ name, type: type as "sse" | "http", config: config as { url: string; headers?: Record<string, string> } })
             serverManager.updateConnectionStatus(newServer.id, true)
 
-            // Connect in proxy
+            /* Connect in proxy */
             try {
                 await proxy.connectServer(newServer)
                 logger.info(`[${userId}] MCP server added and connected: ${name} (${type}) - ${testResult.toolCount} tools`)
@@ -158,7 +152,7 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
         }
     })
 
-    // PUT /mcp-servers/api/:id
+    /* PUT /mcp-servers/api/:id */
     router.put("/api/:id", (req: Request, res: Response) => {
         try {
             const userId = getUserId(req)
@@ -190,7 +184,7 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
         }
     })
 
-    // POST /mcp-servers/api/:id/toggle
+    /* POST /mcp-servers/api/:id/toggle */
     router.post("/api/:id/toggle", async (req: Request, res: Response) => {
         try {
             const userId = getUserId(req)
@@ -199,7 +193,7 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
 
             const server = serverManager.toggleServer(id)
 
-            // If proxy is initialized, connect/disconnect accordingly
+            /* If proxy is initialized, connect/disconnect accordingly */
             if (userProxyManager.isInitialized(userId)) {
                 const proxy = await userProxyManager.getProxy(userId)
                 if (server.enabled) {
@@ -230,14 +224,14 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
         }
     })
 
-    // DELETE /mcp-servers/api/:id
+    /* DELETE /mcp-servers/api/:id */
     router.delete("/api/:id", async (req: Request, res: Response) => {
         try {
             const userId = getUserId(req)
             const serverManager = userProxyManager.getServerManager(userId)
             const id = req.params["id"] as string
 
-            // Disconnect if proxy is running
+            /* Disconnect if proxy is running */
             if (userProxyManager.isInitialized(userId)) {
                 const proxy = await userProxyManager.getProxy(userId)
                 await proxy.disconnectServer(id)
@@ -259,7 +253,7 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
         }
     })
 
-    // GET /mcp-servers/api/:id/tools
+    /* GET /mcp-servers/api/:id/tools */
     router.get("/api/:id/tools", async (req: Request, res: Response) => {
         try {
             const userId = getUserId(req)
@@ -299,7 +293,7 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
         }
     })
 
-    // PUT /mcp-servers/api/:id/tools
+    /* PUT /mcp-servers/api/:id/tools */
     router.put("/api/:id/tools", (req: Request, res: Response) => {
         try {
             const userId = getUserId(req)
@@ -332,7 +326,7 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
         }
     })
 
-    // POST /mcp-servers/api/refresh
+    /* POST /mcp-servers/api/refresh */
     router.post("/api/refresh", async (req: Request, res: Response) => {
         try {
             const userId = getUserId(req)
@@ -344,7 +338,7 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
 
             const serverManager = userProxyManager.getServerManager(userId)
             const servers = serverManager.getServers()
-            const enriched = servers.map(server => ({
+            const enriched = servers.map((server) => ({
                 ...server,
                 connected: proxy.isConnected(server.id)
             }))
@@ -358,7 +352,7 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
         }
     })
 
-    // POST /mcp-servers/api/:id/refresh
+    /* POST /mcp-servers/api/:id/refresh */
     router.post("/api/:id/refresh", async (req: Request, res: Response) => {
         try {
             const userId = getUserId(req)
@@ -391,9 +385,14 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
         }
         catch (error) {
             const msg = error instanceof Error ? error.message : String(error)
-            const id = req.params["id"] as string
-            const serverManager = userProxyManager.getServerManager(getUserId(req))
-            serverManager.updateConnectionStatus(id, false, msg)
+            try {
+                const id = req.params["id"] as string
+                const serverManager = userProxyManager.getServerManager(getUserId(req))
+                serverManager.updateConnectionStatus(id, false, msg)
+            }
+            catch {
+                /* ignore status update failure */
+            }
             logger.error(`Failed to refresh MCP server: ${msg}`)
             res.status(500).json({ error: "Failed to refresh server: " + msg })
         }

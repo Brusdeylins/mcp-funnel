@@ -28,7 +28,7 @@ function createSessionAuth (authManager: AuthManager) {
 
     function checkSetup (req: Request, res: Response, next: NextFunction): void {
         const skipPaths = ["/setup", "/login", "/health", "/logout"]
-        if (skipPaths.includes(req.path)) {
+        if (skipPaths.includes(req.path) || req.path.startsWith("/mcp")) {
             next()
             return
         }

@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="gfx/mcp-b.svg" alt="MCP-Funnel" width="120" height="120" />
+</p>
+
 # MCP-Funnel
 
 Multi-user MCP (Model Context Protocol) server management tool. Each user manages their own MCP server configurations and gets a personal API key. MCP-Funnel funnels multiple MCP servers into a single endpoint per user, reducing LLM context usage via 3 meta-tools (`mcp_discover_tools`, `mcp_get_tool_schema`, `mcp_call_tool`).
@@ -6,13 +10,32 @@ Multi-user MCP (Model Context Protocol) server management tool. Each user manage
 
 ## Features
 
+**MCP Proxy**
+- Funnels multiple backend MCP servers into a single endpoint per user
+- 3 meta-tools for lazy tool discovery: `mcp_discover_tools`, `mcp_get_tool_schema`, `mcp_call_tool`
+- Supports SSE and Streamable HTTP transports to backend servers
+- Exposes both JSON-RPC (Streamable HTTP) and SSE transport for MCP clients
+- Per-server tool enable/disable control
+- Automatic reconnection with exponential backoff
+
+**User Isolation**
+- Per-user MCP server registrations (each user has their own server config file)
+- Per-user API keys (Bearer token authentication)
+- Complete isolation — users cannot see or access each other's MCP servers or tools
+
+**Administration**
 - Admin setup with secure password hashing (bcrypt)
 - Multi-user support with per-user API keys
-- Dashboard with API key management
+- Web dashboard with API key management and MCP server status
 - User management (admin only)
 - Dark/light theme toggle
+
+**Infrastructure**
 - File-based storage (no database required)
 - Docker support
+- CLI with configurable port and data directory
+- Security headers via Helmet (HSTS, CSP, etc.)
+- Request statistics tracking per user
 
 ## Quick Start
 
@@ -43,6 +66,26 @@ Or with options:
 ```bash
 node dst/mcp-funnel.js --port 8080 --data-dir ./my-data
 ```
+
+## MCP Client Configuration
+
+Configure your MCP client (e.g. Claude Code, Cursor) to connect to MCP-Funnel:
+
+```json
+{
+  "mcpServers": {
+    "mcp-funnel": {
+      "type": "streamable-http",
+      "url": "https://your-host/mcp",
+      "headers": {
+        "Authorization": "Bearer mcp_your-api-key-here"
+      }
+    }
+  }
+}
+```
+
+The API key can be found in the web dashboard under Settings.
 
 ## Configuration
 
@@ -77,7 +120,8 @@ All data is stored as JSON files in the configured data directory:
 - `auth.json` — Admin credentials, user accounts, API keys
 - `sessions/` — File-based session store
 - `session-secret.txt` — Auto-generated session secret
-- `servers/{userId}.json` — Per-user MCP server configs (future)
+- `stats.json` — Per-user request statistics
+- `servers/{userId}.json` — Per-user MCP server configurations
 
 ## Development
 

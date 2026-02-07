@@ -112,7 +112,7 @@ class AuthManager {
     async validateCredentials (username: string, password: string): Promise<{ valid: boolean, userId: string, role: "admin" | "user", disabled: boolean } | null> {
         const authData = this.loadAuthData()
 
-        // Check admin
+        /* Check admin */
         if (authData.admin.username === username && authData.admin.passwordHash) {
             const valid = await bcrypt.compare(password, authData.admin.passwordHash)
             if (valid) {
@@ -120,7 +120,7 @@ class AuthManager {
             }
         }
 
-        // Check users
+        /* Check users */
         for (const user of authData.users) {
             if (user.username === username) {
                 const valid = await bcrypt.compare(password, user.passwordHash)
@@ -128,7 +128,7 @@ class AuthManager {
                     if (!user.enabled) {
                         return { valid: false, userId: user.id, role: "user", disabled: true }
                     }
-                    // Update lastLogin
+                    /* Update lastLogin */
                     user.lastLogin = new Date().toISOString()
                     this.saveAuthData(authData)
                     return { valid: true, userId: user.id, role: "user", disabled: false }
@@ -155,7 +155,7 @@ class AuthManager {
             authData.admin.updatedAt = new Date().toISOString()
         }
         else {
-            const user = authData.users.find(u => u.id === userId)
+            const user = authData.users.find((u) => u.id === userId)
             if (!user) {
                 throw new Error("User not found")
             }
@@ -177,7 +177,7 @@ class AuthManager {
         if (userId === "admin") {
             return authData.admin.apiKey
         }
-        const user = authData.users.find(u => u.id === userId)
+        const user = authData.users.find((u) => u.id === userId)
         return user ? user.apiKey : ""
     }
 
@@ -190,7 +190,7 @@ class AuthManager {
             authData.admin.updatedAt = new Date().toISOString()
         }
         else {
-            const user = authData.users.find(u => u.id === userId)
+            const user = authData.users.find((u) => u.id === userId)
             if (!user) {
                 throw new Error("User not found")
             }
@@ -203,17 +203,22 @@ class AuthManager {
         return newKey
     }
 
+    private safeEqual (a: string, b: string): boolean {
+        if (a.length !== b.length) return false
+        return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b))
+    }
+
     validateApiKey (key: string): { valid: boolean, userId: string, username: string } | null {
         const authData = this.loadAuthData()
 
-        // Check admin key
-        if (authData.admin.apiKey && authData.admin.apiKey === key) {
+        /* Check admin key */
+        if (authData.admin.apiKey && this.safeEqual(authData.admin.apiKey, key)) {
             return { valid: true, userId: "admin", username: authData.admin.username }
         }
 
-        // Check user keys
+        /* Check user keys */
         for (const user of authData.users) {
-            if (user.apiKey === key && user.enabled) {
+            if (user.enabled && this.safeEqual(user.apiKey, key)) {
                 return { valid: true, userId: user.id, username: user.username }
             }
         }

@@ -33,17 +33,17 @@ function createApp (config: McpFunnelConfig): { app: express.Application, statsM
     const statsManager = new StatsManager(config.dataDir)
     const userProxyManager = new UserProxyManager(config.dataDir, statsManager)
 
-    // Auto-create admin from env vars if needed
+    /* Auto-create admin from env vars if needed */
     if (config.adminUser && config.adminPass && authManager.isSetupRequired()) {
         authManager.setupAdmin(config.adminUser, config.adminPass)
             .then(() => logger.info(`Admin auto-created from environment: ${config.adminUser}`))
-            .catch(err => logger.error(`Failed to auto-create admin: ${err instanceof Error ? err.message : String(err)}`))
+            .catch((err) => logger.error(`Failed to auto-create admin: ${err instanceof Error ? err.message : String(err)}`))
     }
 
-    // Trust proxy
+    /* Trust proxy */
     app.set("trust proxy", true)
 
-    // Security headers
+    /* Security headers */
     app.use(helmet({
         contentSecurityPolicy: {
             directives: {
@@ -64,12 +64,12 @@ function createApp (config: McpFunnelConfig): { app: express.Application, statsM
         referrerPolicy: { policy: "strict-origin-when-cross-origin" }
     }))
 
-    // Body parsing
+    /* Body parsing */
     app.use(express.json({ limit: "10mb" }))
     app.use(express.urlencoded({ extended: true }))
     app.use(cookieParser())
 
-    // Session middleware
+    /* Session middleware */
     const sessionsPath = path.join(config.dataDir, "sessions")
     app.use(session({
         store: new FileStore({
@@ -81,25 +81,25 @@ function createApp (config: McpFunnelConfig): { app: express.Application, statsM
         resave: false,
         saveUninitialized: false,
         cookie: {
-            secure: false,
+            secure: config.nodeEnv === "production",
             httpOnly: true,
             maxAge: config.sessionMaxAge
         }
     }))
 
-    // Middleware factories
+    /* Middleware factories */
     const { requireAuth, requireAdmin, checkSetup } = createSessionAuth(authManager)
 
-    // Setup check — redirect to /setup if no admin exists
+    /* Setup check — redirect to /setup if no admin exists */
     app.use(checkSetup)
 
-    // Request logging
+    /* Request logging */
     app.use((req, _res, next) => {
         logger.info(`${req.method} ${req.path}`)
         next()
     })
 
-    // Disable caching
+    /* Disable caching */
     app.use((_req, res, next) => {
         res.set("Cache-Control", "no-store, no-cache, must-revalidate, private")
         res.set("Pragma", "no-cache")
@@ -107,27 +107,27 @@ function createApp (config: McpFunnelConfig): { app: express.Application, statsM
         next()
     })
 
-    // Health check
+    /* Health check */
     app.get("/health", (_req, res) => {
         res.json({ status: "ok", timestamp: new Date().toISOString() })
     })
 
-    // Root redirect
+    /* Root redirect */
     app.get("/", (_req, res) => {
         res.redirect("/dashboard")
     })
 
-    // Mount routes
+    /* Mount routes */
     app.use("/", createAuthRoutes(authManager))
-    app.use("/dashboard", requireAuth, createDashboardRoutes(authManager, statsManager, config))
+    app.use("/dashboard", requireAuth, createDashboardRoutes(authManager, statsManager))
     app.use("/users", requireAuth, requireAdmin, createUserRoutes(userManager, statsManager))
     app.use("/mcp-servers", requireAuth, createMcpRoutes(userProxyManager))
     app.use("/settings", requireAuth, createSettingsRoutes(authManager))
 
-    // MCP protocol endpoint (API key authenticated)
+    /* MCP protocol endpoint (API key authenticated) */
     app.use("/mcp", createMcpProxyRoutes(userProxyManager, authManager, statsManager))
 
-    // 404
+    /* 404 */
     app.use((req, res) => {
         logger.warn(`404: ${req.method} ${req.path}`)
         res.status(404).json({ error: "Not Found", path: req.path })

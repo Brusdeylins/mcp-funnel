@@ -6,14 +6,13 @@
 import { Router, Request, Response } from "express"
 import { AuthManager } from "../mcp-funnel-auth.js"
 import { StatsManager } from "../mcp-funnel-stats.js"
-import { McpFunnelConfig } from "../mcp-funnel-config.js"
 import { renderDashboardPage } from "../views/dashboard-view.js"
 import logger from "../mcp-funnel-log.js"
 
-function createDashboardRoutes (authManager: AuthManager, statsManager: StatsManager, _config: McpFunnelConfig): Router {
+function createDashboardRoutes (authManager: AuthManager, statsManager: StatsManager): Router {
     const router = Router()
 
-    // GET /dashboard
+    /* GET /dashboard */
     router.get("/", (req: Request, res: Response) => {
         const userId = req.session.userId || "admin"
         const role = req.session.role || "admin"
@@ -26,7 +25,7 @@ function createDashboardRoutes (authManager: AuthManager, statsManager: StatsMan
         res.send(renderDashboardPage({ apiKey, role, username, mcpEndpoint, stats }))
     })
 
-    // POST /dashboard/api/regenerate-key
+    /* POST /dashboard/api/regenerate-key */
     router.post("/api/regenerate-key", (req: Request, res: Response) => {
         try {
             const userId = req.session.userId || "admin"

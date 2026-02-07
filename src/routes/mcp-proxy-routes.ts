@@ -69,12 +69,16 @@ function createMcpProxyRoutes (userProxyManager: UserProxyManager, authManager: 
         }
     }
 
-    // POST /mcp — JSON-RPC (Streamable HTTP) — primary
+    /* POST /mcp — JSON-RPC (Streamable HTTP) — primary */
     router.post("/", requireApiKey, handleMcpMessage)
 
-    // GET /mcp/sse — SSE transport fallback
+    /* GET /mcp/sse — SSE transport fallback */
     router.get("/sse", requireApiKey, (req: Request, res: Response) => {
         const userId = req.apiKeyUser?.userId
+        if (!userId) {
+            res.status(401).json({ error: "Unauthorized" })
+            return
+        }
         logger.info(`MCP SSE connection established for user: ${userId}`)
 
         res.status(200)
@@ -104,7 +108,7 @@ function createMcpProxyRoutes (userProxyManager: UserProxyManager, authManager: 
         })
     })
 
-    // GET /mcp/tools — List tools (convenience)
+    /* GET /mcp/tools — List tools (convenience) */
     router.get("/tools", requireApiKey, async (req: Request, res: Response) => {
         try {
             const userId = req.apiKeyUser?.userId
@@ -119,7 +123,7 @@ function createMcpProxyRoutes (userProxyManager: UserProxyManager, authManager: 
             res.json({
                 success: true,
                 count: tools.length,
-                tools: tools.map(t => ({
+                tools: tools.map((t) => ({
                     name: t.name,
                     description: t.description,
                     inputSchema: t.inputSchema
@@ -133,7 +137,7 @@ function createMcpProxyRoutes (userProxyManager: UserProxyManager, authManager: 
         }
     })
 
-    // GET /mcp/status — Connection status
+    /* GET /mcp/status — Connection status */
     router.get("/status", requireApiKey, async (req: Request, res: Response) => {
         try {
             const userId = req.apiKeyUser?.userId
@@ -159,7 +163,7 @@ function createMcpProxyRoutes (userProxyManager: UserProxyManager, authManager: 
         }
     })
 
-    // POST /mcp/refresh — Force reconnect all
+    /* POST /mcp/refresh — Force reconnect all */
     router.post("/refresh", requireApiKey, async (req: Request, res: Response) => {
         try {
             const userId = req.apiKeyUser?.userId

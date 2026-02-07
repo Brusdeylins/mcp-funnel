@@ -20,14 +20,14 @@ interface McpFunnelConfig {
 }
 
 function resolveSessionSecret (dataDir: string): string {
-    // 1. ENV var has highest priority
+    /* 1. ENV var has highest priority */
     const envSecret = process.env["SESSION_SECRET"]
     if (envSecret) {
         logger.debug("Using SESSION_SECRET from environment variable")
         return envSecret
     }
 
-    // 2. Read from file if it exists
+    /* 2. Read from file if it exists */
     const secretFile = path.join(dataDir, "session-secret.txt")
     if (fs.existsSync(secretFile)) {
         const fileSecret = fs.readFileSync(secretFile, "utf8").trim()
@@ -37,7 +37,7 @@ function resolveSessionSecret (dataDir: string): string {
         }
     }
 
-    // 3. Generate new secret and persist it
+    /* 3. Generate new secret and persist it */
     const generated = crypto.randomBytes(32).toString("hex")
     fs.mkdirSync(dataDir, { recursive: true })
     fs.writeFileSync(secretFile, generated, "utf8")
@@ -50,7 +50,7 @@ function loadConfig (cliPort?: number, cliDataDir?: string): McpFunnelConfig {
         || process.env["DATA_DIR"]
         || "./data"
 
-    // Ensure data directory exists
+    /* Ensure data directory exists */
     fs.mkdirSync(dataDir, { recursive: true })
 
     const sessionSecret = resolveSessionSecret(dataDir)

@@ -16,8 +16,8 @@ interface UserEntry {
     lastAccess: number
 }
 
-const IDLE_CHECK_INTERVAL = 5 * 60 * 1000    // 5 minutes
-const IDLE_TIMEOUT = 30 * 60 * 1000          // 30 minutes
+const IDLE_CHECK_INTERVAL = 5 * 60 * 1000    /* 5 minutes  */
+const IDLE_TIMEOUT        = 30 * 60 * 1000   /* 30 minutes */
 
 class UserProxyManager {
     private users: Map<string, UserEntry>
@@ -41,7 +41,7 @@ class UserProxyManager {
             return existing.proxy
         }
 
-        // Promise coalescing: prevent duplicate concurrent init
+        /* Promise coalescing: prevent duplicate concurrent init */
         const pending = this.initPromises.get(userId)
         if (pending) {
             return pending
@@ -84,7 +84,7 @@ class UserProxyManager {
             existing.lastAccess = Date.now()
             return existing.serverManager
         }
-        // Return a new manager even if proxy not initialized yet
+        /* Return a new manager even if proxy not initialized yet */
         return new McpServerManager(this.dataDir, userId)
     }
 
@@ -109,7 +109,7 @@ class UserProxyManager {
             this.users.delete(userId)
         }
 
-        // Delete server config file
+        /* Delete server config file */
         const filePath = path.join(this.dataDir, "servers", `${userId}.json`)
         try {
             if (fs.existsSync(filePath)) {
@@ -145,7 +145,7 @@ class UserProxyManager {
         for (const [userId, entry] of this.users.entries()) {
             if (now - entry.lastAccess > IDLE_TIMEOUT) {
                 logger.info(`Shutting down idle MCP proxy for user: ${userId}`)
-                entry.proxy.shutdown().catch(err => {
+                entry.proxy.shutdown().catch((err) => {
                     const msg = err instanceof Error ? err.message : String(err)
                     logger.error(`Error shutting down idle proxy for ${userId}: ${msg}`)
                 })

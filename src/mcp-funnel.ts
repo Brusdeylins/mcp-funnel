@@ -40,7 +40,7 @@ const server = app.listen(config.port, "0.0.0.0", () => {
 process.on("SIGTERM", () => {
     logger.info("SIGTERM received, shutting down...")
     userProxyManager.shutdown()
-        .catch(err => logger.error(`Proxy shutdown error: ${err instanceof Error ? err.message : String(err)}`))
+        .catch((err) => logger.error(`Proxy shutdown error: ${err instanceof Error ? err.message : String(err)}`))
         .finally(() => {
             statsManager.flush()
             server.close(() => {
@@ -54,13 +54,14 @@ process.on("SIGTERM", () => {
 process.on("SIGINT", () => {
     logger.info("SIGINT received, shutting down...")
     userProxyManager.shutdown()
-        .catch(err => logger.error(`Proxy shutdown error: ${err instanceof Error ? err.message : String(err)}`))
+        .catch((err) => logger.error(`Proxy shutdown error: ${err instanceof Error ? err.message : String(err)}`))
         .finally(() => {
             statsManager.flush()
             server.close(() => {
                 logger.info("Server closed")
                 process.exit(0)
             })
+            setTimeout(() => { process.exit(1) }, 10000)
         })
 })
 

@@ -12,24 +12,24 @@ import logger from "../mcp-funnel-log.js"
 function createUserRoutes (userManager: UserManager, statsManager: StatsManager): Router {
     const router = Router()
 
-    // GET /users/manage
+    /* GET /users/manage */
     router.get("/manage", (req: Request, res: Response) => {
         const username = req.session.username || ""
         res.send(renderUsersPage(username))
     })
 
-    // GET /users/api/list
+    /* GET /users/api/list */
     router.get("/api/list", (_req: Request, res: Response) => {
         const users = userManager.listUsers()
         const counts = statsManager.getAllRequestCounts()
-        const enriched = users.map(u => ({
+        const enriched = users.map((u) => ({
             ...u,
             requestCount: counts[u.id] || 0
         }))
         res.json(enriched)
     })
 
-    // POST /users/api/create
+    /* POST /users/api/create */
     router.post("/api/create", async (req: Request, res: Response) => {
         try {
             const { username, password } = req.body as { username: string, password: string }
@@ -43,7 +43,7 @@ function createUserRoutes (userManager: UserManager, statsManager: StatsManager)
         }
     })
 
-    // PUT /users/api/:id
+    /* PUT /users/api/:id */
     router.put("/api/:id", async (req: Request, res: Response) => {
         try {
             const { password, enabled } = req.body as { password?: string, enabled?: boolean }
@@ -58,7 +58,7 @@ function createUserRoutes (userManager: UserManager, statsManager: StatsManager)
         }
     })
 
-    // DELETE /users/api/:id
+    /* DELETE /users/api/:id */
     router.delete("/api/:id", (req: Request, res: Response) => {
         try {
             const id = req.params["id"] as string
