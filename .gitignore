@@ -1,5 +1,6 @@
 node_modules/
 dst/
+dst-test/
 data/
 .env
 .DS_Store

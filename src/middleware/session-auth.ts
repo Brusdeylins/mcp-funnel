@@ -1,11 +1,12 @@
-// MCP-Funnel — Multi-user MCP server management
-// Copyright (c) 2026 Matthias Brusdeylins
-// SPDX-License-Identifier: GPL-3.0-only
-// 100% AI-generated code (vibe-coding with Claude)
+/* MCP-Funnel — Multi-user MCP server management
+ * Copyright (c) 2026 Matthias Brusdeylins
+ * SPDX-License-Identifier: GPL-3.0-only
+ * 100% AI-generated code (vibe-coding with Claude) */
 
 import { Request, Response, NextFunction } from "express"
 import { AuthManager } from "../mcp-funnel-auth.js"
 import logger from "../mcp-funnel-log.js"
+import { getErrorMessage } from "../utils.js"
 
 function createSessionAuth (authManager: AuthManager) {
     function requireAuth (req: Request, res: Response, next: NextFunction): void {
@@ -43,7 +44,7 @@ function createSessionAuth (authManager: AuthManager) {
             next()
         }
         catch (error) {
-            const msg = error instanceof Error ? error.message : String(error)
+            const msg = getErrorMessage(error)
             logger.error(`Setup check failed: ${msg}`)
             res.status(500).json({ error: "Server error" })
         }

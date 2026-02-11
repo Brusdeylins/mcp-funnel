@@ -1,12 +1,13 @@
-// MCP-Funnel — Multi-user MCP server management
-// Copyright (c) 2026 Matthias Brusdeylins
-// SPDX-License-Identifier: GPL-3.0-only
-// 100% AI-generated code (vibe-coding with Claude)
+/* MCP-Funnel — Multi-user MCP server management
+ * Copyright (c) 2026 Matthias Brusdeylins
+ * SPDX-License-Identifier: GPL-3.0-only
+ * 100% AI-generated code (vibe-coding with Claude) */
 
 import { Router, Request, Response } from "express"
 import { AuthManager } from "../mcp-funnel-auth.js"
 import { renderSettingsPage } from "../views/settings-view.js"
 import logger from "../mcp-funnel-log.js"
+import { getErrorMessage, getSessionUserId } from "../utils.js"
 
 function createSettingsRoutes (authManager: AuthManager): Router {
     const router = Router()
@@ -21,7 +22,7 @@ function createSettingsRoutes (authManager: AuthManager): Router {
     /* POST /settings/api/change-password */
     router.post("/api/change-password", async (req: Request, res: Response) => {
         try {
-            const userId = req.session.userId || "admin"
+            const userId = getSessionUserId(req)
             const { currentPassword, newPassword } = req.body as { currentPassword: string, newPassword: string }
 
             if (!currentPassword || !newPassword) {
@@ -34,7 +35,7 @@ function createSettingsRoutes (authManager: AuthManager): Router {
             res.json({ success: true, message: "Password changed" })
         }
         catch (error) {
-            const msg = error instanceof Error ? error.message : String(error)
+            const msg = getErrorMessage(error)
             logger.error(`Password change failed: ${msg}`)
             res.status(400).json({ error: msg })
         }

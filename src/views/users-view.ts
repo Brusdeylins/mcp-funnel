@@ -1,7 +1,7 @@
-// MCP-Funnel — Multi-user MCP server management
-// Copyright (c) 2026 Matthias Brusdeylins
-// SPDX-License-Identifier: GPL-3.0-only
-// 100% AI-generated code (vibe-coding with Claude)
+/* MCP-Funnel — Multi-user MCP server management
+ * Copyright (c) 2026 Matthias Brusdeylins
+ * SPDX-License-Identifier: GPL-3.0-only
+ * 100% AI-generated code (vibe-coding with Claude) */
 
 import { generateLayout, generatePageHeader } from "./layout-template.js"
 
@@ -123,6 +123,9 @@ function renderUsersPage (username: string): string {
     </div>`
 
     const scripts = `<script>
+    function escapeHtml(str) {
+      return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
     function maskKey(key) {
       if (!key || key.length <= 12) return key || '';
       return key.substring(0, 8) + '...' + key.substring(key.length - 4);
@@ -145,16 +148,16 @@ function renderUsersPage (username: string): string {
           var created = new Date(u.createdAt).toLocaleDateString();
           var reqCount = (u.requestCount || 0).toLocaleString();
           return '<tr>' +
-            '<td>' + u.username + '</td>' +
+            '<td>' + escapeHtml(u.username) + '</td>' +
             '<td>' + statusBadge + '</td>' +
             '<td>' + reqCount + '</td>' +
             '<td><code>' + maskKey(u.apiKey) + '</code></td>' +
             '<td>' + created + '</td>' +
             '<td>' + lastLogin + '</td>' +
             '<td><div class="btn-list flex-nowrap">' +
-              '<button class="btn btn-sm btn-outline-primary" onclick="showEditUser(\\'' + u.id + '\\', \\'' + u.username + '\\')">Edit</button>' +
+              '<button class="btn btn-sm btn-outline-primary" onclick="showEditUser(\\'' + u.id + '\\', \\'' + escapeHtml(u.username) + '\\')">Edit</button>' +
               '<button class="btn btn-sm btn-outline-' + (u.enabled ? 'warning' : 'success') + '" onclick="toggleUser(\\'' + u.id + '\\', ' + !u.enabled + ')">' + (u.enabled ? 'Disable' : 'Enable') + '</button>' +
-              '<button class="btn btn-sm btn-outline-danger" onclick="showDeleteUser(\\'' + u.id + '\\', \\'' + u.username + '\\')">Delete</button>' +
+              '<button class="btn btn-sm btn-outline-danger" onclick="showDeleteUser(\\'' + u.id + '\\', \\'' + escapeHtml(u.username) + '\\')">Delete</button>' +
             '</div></td>' +
           '</tr>';
         }).join('');

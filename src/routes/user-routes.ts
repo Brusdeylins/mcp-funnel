@@ -1,13 +1,14 @@
-// MCP-Funnel — Multi-user MCP server management
-// Copyright (c) 2026 Matthias Brusdeylins
-// SPDX-License-Identifier: GPL-3.0-only
-// 100% AI-generated code (vibe-coding with Claude)
+/* MCP-Funnel — Multi-user MCP server management
+ * Copyright (c) 2026 Matthias Brusdeylins
+ * SPDX-License-Identifier: GPL-3.0-only
+ * 100% AI-generated code (vibe-coding with Claude) */
 
 import { Router, Request, Response } from "express"
 import { UserManager } from "../mcp-funnel-users.js"
 import { StatsManager } from "../mcp-funnel-stats.js"
 import { renderUsersPage } from "../views/users-view.js"
 import logger from "../mcp-funnel-log.js"
+import { getErrorMessage } from "../utils.js"
 
 function createUserRoutes (userManager: UserManager, statsManager: StatsManager): Router {
     const router = Router()
@@ -37,7 +38,7 @@ function createUserRoutes (userManager: UserManager, statsManager: StatsManager)
             res.json(user)
         }
         catch (error) {
-            const msg = error instanceof Error ? error.message : String(error)
+            const msg = getErrorMessage(error)
             logger.error(`User creation failed: ${msg}`)
             res.status(400).json({ error: msg })
         }
@@ -52,7 +53,7 @@ function createUserRoutes (userManager: UserManager, statsManager: StatsManager)
             res.json(user)
         }
         catch (error) {
-            const msg = error instanceof Error ? error.message : String(error)
+            const msg = getErrorMessage(error)
             logger.error(`User update failed: ${msg}`)
             res.status(400).json({ error: msg })
         }
@@ -66,7 +67,7 @@ function createUserRoutes (userManager: UserManager, statsManager: StatsManager)
             res.json({ success: true })
         }
         catch (error) {
-            const msg = error instanceof Error ? error.message : String(error)
+            const msg = getErrorMessage(error)
             logger.error(`User deletion failed: ${msg}`)
             res.status(400).json({ error: msg })
         }

@@ -1,7 +1,7 @@
-// MCP-Funnel — Multi-user MCP server management
-// Copyright (c) 2026 Matthias Brusdeylins
-// SPDX-License-Identifier: GPL-3.0-only
-// 100% AI-generated code (vibe-coding with Claude)
+/* MCP-Funnel — Multi-user MCP server management
+ * Copyright (c) 2026 Matthias Brusdeylins
+ * SPDX-License-Identifier: GPL-3.0-only
+ * 100% AI-generated code (vibe-coding with Claude) */
 
 import { Request, Response, NextFunction } from "express"
 import { AuthManager } from "../mcp-funnel-auth.js"
@@ -38,7 +38,7 @@ function createApiKeyAuth (authManager: AuthManager, statsManager: StatsManager)
 
         const result = authManager.validateApiKey(token)
         if (!result) {
-            logger.warn(`Invalid API key attempt: ${token.substring(0, 8)}...`)
+            logger.warn(`Invalid API key attempt: ${req.method} ${req.path}`)
             res.status(401).json({
                 error: "Invalid API key",
                 message: "The provided API key is not valid"

@@ -1,9 +1,9 @@
-// MCP-Funnel — Multi-user MCP server management
-// Copyright (c) 2026 Matthias Brusdeylins
-// SPDX-License-Identifier: GPL-3.0-only
-// 100% AI-generated code (vibe-coding with Claude)
+/* MCP-Funnel — Multi-user MCP server management
+ * Copyright (c) 2026 Matthias Brusdeylins
+ * SPDX-License-Identifier: GPL-3.0-only
+ * 100% AI-generated code (vibe-coding with Claude) */
 
-import { generateLayout, generatePageHeader } from "./layout-template.js"
+import { generateLayout, generatePageHeader, escapeHtml } from "./layout-template.js"
 
 function renderSettingsPage (role: "admin" | "user", username: string): string {
     const content = `
@@ -14,7 +14,7 @@ function renderSettingsPage (role: "admin" | "user", username: string): string {
           <div class="col-lg-6">
             <div class="card">
               <div class="card-header">
-                <h3 class="card-title">Change Password for <strong>${username}</strong></h3>
+                <h3 class="card-title">Change Password for <strong>${escapeHtml(username)}</strong></h3>
               </div>
               <div class="card-body">
                 <div class="alert alert-danger d-none" id="pwError"></div>

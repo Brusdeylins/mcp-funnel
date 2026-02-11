@@ -1,7 +1,7 @@
-// MCP-Funnel — Multi-user MCP server management
-// Copyright (c) 2026 Matthias Brusdeylins
-// SPDX-License-Identifier: GPL-3.0-only
-// 100% AI-generated code (vibe-coding with Claude)
+/* MCP-Funnel — Multi-user MCP server management
+ * Copyright (c) 2026 Matthias Brusdeylins
+ * SPDX-License-Identifier: GPL-3.0-only
+ * 100% AI-generated code (vibe-coding with Claude) */
 
 import fs from "fs"
 import path from "path"
@@ -40,6 +40,7 @@ function generateApiKey (): string {
 
 class AuthManager {
     private authFilePath: string
+    private cachedRaw: string | null = null
 
     constructor (dataDir: string) {
         this.authFilePath = path.join(dataDir, "auth.json")
@@ -70,12 +71,16 @@ class AuthManager {
     }
 
     loadAuthData (): AuthData {
-        const data = fs.readFileSync(this.authFilePath, "utf8")
-        return JSON.parse(data) as AuthData
+        if (this.cachedRaw === null) {
+            this.cachedRaw = fs.readFileSync(this.authFilePath, "utf8")
+        }
+        return JSON.parse(this.cachedRaw) as AuthData
     }
 
     saveAuthData (authData: AuthData): void {
-        fs.writeFileSync(this.authFilePath, JSON.stringify(authData, null, 2), "utf8")
+        const raw = JSON.stringify(authData, null, 2)
+        fs.writeFileSync(this.authFilePath, raw, { encoding: "utf8", mode: 0o600 })
+        this.cachedRaw = raw
         logger.debug("Auth data saved successfully")
     }
 
@@ -204,8 +209,9 @@ class AuthManager {
     }
 
     private safeEqual (a: string, b: string): boolean {
-        if (a.length !== b.length) return false
-        return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b))
+        const ha = crypto.createHash("sha256").update(a).digest()
+        const hb = crypto.createHash("sha256").update(b).digest()
+        return crypto.timingSafeEqual(ha, hb)
     }
 
     validateApiKey (key: string): { valid: boolean, userId: string, username: string } | null {

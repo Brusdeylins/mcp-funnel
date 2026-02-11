@@ -1,18 +1,36 @@
-// MCP-Funnel — Multi-user MCP server management
-// Copyright (c) 2026 Matthias Brusdeylins
-// SPDX-License-Identifier: GPL-3.0-only
-// 100% AI-generated code (vibe-coding with Claude)
+/* MCP-Funnel — Multi-user MCP server management
+ * Copyright (c) 2026 Matthias Brusdeylins
+ * SPDX-License-Identifier: GPL-3.0-only
+ * 100% AI-generated code (vibe-coding with Claude) */
 
 import fs from "fs"
 import path from "path"
 import { v4 as uuidv4 } from "uuid"
 import logger from "./mcp-funnel-log.js"
+import { getErrorMessage } from "./utils.js"
 
-type ServerType = "sse" | "http"
+type ServerType = "sse" | "http" | "stdio"
 
-interface ServerConfig {
+interface UrlServerConfig {
     url: string
     headers?: Record<string, string>
+}
+
+interface StdioServerConfig {
+    command: string
+    args?: string[]
+    env?: Record<string, string>
+    cwd?: string
+}
+
+type ServerConfig = UrlServerConfig | StdioServerConfig
+
+function isUrlConfig (config: ServerConfig): config is UrlServerConfig {
+    return "url" in config
+}
+
+function isStdioConfig (config: ServerConfig): config is StdioServerConfig {
+    return "command" in config
 }
 
 interface McpServerEntry {
@@ -33,7 +51,7 @@ interface ServerData {
 }
 
 function trimConfigUrl<T extends { url?: string }> (config: T): T {
-    if (config && config.url) {
+    if (config && "url" in config && config.url) {
         return { ...config, url: config.url.trim().replace(/\/+$/, "") }
     }
     return config
@@ -41,8 +59,12 @@ function trimConfigUrl<T extends { url?: string }> (config: T): T {
 
 class McpServerManager {
     private filePath: string
+    private cachedRaw: string | null = null
 
     constructor (dataDir: string, userId: string) {
+        if (/[/\\]/.test(userId))
+            throw new Error("Invalid userId")
+
         const serversDir = path.join(dataDir, "servers")
         if (!fs.existsSync(serversDir)) {
             fs.mkdirSync(serversDir, { recursive: true })
@@ -62,41 +84,55 @@ class McpServerManager {
 
     private loadData (): ServerData {
         try {
-            const raw = fs.readFileSync(this.filePath, "utf-8")
-            const parsed = JSON.parse(raw) as ServerData
+            if (this.cachedRaw === null) {
+                this.cachedRaw = fs.readFileSync(this.filePath, "utf-8")
+            }
+            const parsed = JSON.parse(this.cachedRaw) as ServerData
 
             if (parsed.servers && Array.isArray(parsed.servers)) {
-                parsed.servers.forEach((server) => {
-                    if (server.config && server.config.url) {
+                for (const server of parsed.servers) {
+                    if (server.config && isUrlConfig(server.config)) {
                         server.config.url = server.config.url.trim().replace(/\/+$/, "")
                     }
-                })
+                }
             }
 
             return parsed
         }
         catch (err) {
-            logger.error(`Failed to load server config: ${err instanceof Error ? err.message : String(err)}`)
+            logger.error(`Failed to load server config: ${getErrorMessage(err)}`)
+            this.cachedRaw = null
             return { servers: [] }
         }
     }
 
     private saveData (data: ServerData): void {
         try {
-            fs.writeFileSync(this.filePath, JSON.stringify(data, null, 2), "utf-8")
+            const raw = JSON.stringify(data, null, 2)
+            fs.writeFileSync(this.filePath, raw, "utf-8")
+            this.cachedRaw = raw
         }
         catch (err) {
-            logger.error(`Failed to save server config: ${err instanceof Error ? err.message : String(err)}`)
+            logger.error(`Failed to save server config: ${getErrorMessage(err)}`)
             throw err
         }
     }
 
     private trimConfigUrl (config: ServerConfig): ServerConfig {
-        return trimConfigUrl(config)
+        if (isUrlConfig(config)) {
+            return trimConfigUrl(config)
+        }
+        return config
     }
 
     private validateConfig (type: ServerType, config: ServerConfig): void {
-        if (!config.url) {
+        if (type === "stdio") {
+            if (!isStdioConfig(config) || !config.command) {
+                throw new Error("Stdio type requires command in config")
+            }
+            return
+        }
+        if (!isUrlConfig(config) || !config.url) {
             throw new Error(`${type.toUpperCase()} type requires url in config`)
         }
         const parsed = URL.parse(config.url)
@@ -128,8 +164,8 @@ class McpServerManager {
             throw new Error("name, type, and config are required")
         }
 
-        if (!["sse", "http"].includes(type)) {
-            throw new Error("type must be one of: sse, http")
+        if (!["sse", "http", "stdio"].includes(type)) {
+            throw new Error("type must be one of: sse, http, stdio")
         }
 
         const trimmedConfig = this.trimConfigUrl(config)
@@ -259,10 +295,10 @@ class McpServerManager {
             }
         }
         catch (err) {
-            logger.error(`Failed to delete server config: ${err instanceof Error ? err.message : String(err)}`)
+            logger.error(`Failed to delete server config: ${getErrorMessage(err)}`)
         }
     }
 }
 
-export { McpServerManager, trimConfigUrl }
-export type { ServerType, ServerConfig, McpServerEntry }
+export { McpServerManager, trimConfigUrl, isUrlConfig, isStdioConfig }
+export type { ServerType, ServerConfig, UrlServerConfig, StdioServerConfig, McpServerEntry }

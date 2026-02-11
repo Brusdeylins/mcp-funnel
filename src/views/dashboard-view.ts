@@ -1,7 +1,7 @@
-// MCP-Funnel — Multi-user MCP server management
-// Copyright (c) 2026 Matthias Brusdeylins
-// SPDX-License-Identifier: GPL-3.0-only
-// 100% AI-generated code (vibe-coding with Claude)
+/* MCP-Funnel — Multi-user MCP server management
+ * Copyright (c) 2026 Matthias Brusdeylins
+ * SPDX-License-Identifier: GPL-3.0-only
+ * 100% AI-generated code (vibe-coding with Claude) */
 
 import { generateLayout, generatePageHeader } from "./layout-template.js"
 import { UserStats } from "../mcp-funnel-stats.js"
@@ -118,7 +118,7 @@ function renderDashboardPage (data: DashboardData): string {
     }
   }
 }</code></pre>
-                      <button class="btn btn-icon btn-primary position-absolute top-0 end-0 m-2" onclick="copySnippet('claudeCode')" id="copyClaudeCodeBtn" title="Copy">
+                      <button class="btn btn-icon btn-outline-primary position-absolute top-0 end-0 m-2" onclick="copySnippet('claudeCode')" id="copyClaudeCodeBtn" title="Copy">
                         <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 7m0 2.667a2.667 2.667 0 0 1 2.667 -2.667h8.666a2.667 2.667 0 0 1 2.667 2.667v8.666a2.667 2.667 0 0 1 -2.667 2.667h-8.666a2.667 2.667 0 0 1 -2.667 -2.667z" /><path d="M4.012 16.737a2.005 2.005 0 0 1 -1.012 -1.737v-10c0 -1.1 .9 -2 2 -2h10c.75 0 1.158 .385 1.5 1" /></svg>
                       </button>
                     </div>
@@ -139,7 +139,7 @@ function renderDashboardPage (data: DashboardData): string {
     }
   }
 }</code></pre>
-                      <button class="btn btn-icon btn-primary position-absolute top-0 end-0 m-2" onclick="copySnippet('copilot')" id="copyCopilotBtn" title="Copy">
+                      <button class="btn btn-icon btn-outline-primary position-absolute top-0 end-0 m-2" onclick="copySnippet('copilot')" id="copyCopilotBtn" title="Copy">
                         <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 7m0 2.667a2.667 2.667 0 0 1 2.667 -2.667h8.666a2.667 2.667 0 0 1 2.667 2.667v8.666a2.667 2.667 0 0 1 -2.667 2.667h-8.666a2.667 2.667 0 0 1 -2.667 -2.667z" /><path d="M4.012 16.737a2.005 2.005 0 0 1 -1.012 -1.737v-10c0 -1.1 .9 -2 2 -2h10c.75 0 1.158 .385 1.5 1" /></svg>
                       </button>
                     </div>
@@ -157,7 +157,7 @@ function renderDashboardPage (data: DashboardData): string {
     }
   }
 }</code></pre>
-                      <button class="btn btn-icon btn-primary position-absolute top-0 end-0 m-2" onclick="copySnippet('cursor')" id="copyCursorBtn" title="Copy">
+                      <button class="btn btn-icon btn-outline-primary position-absolute top-0 end-0 m-2" onclick="copySnippet('cursor')" id="copyCursorBtn" title="Copy">
                         <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 7m0 2.667a2.667 2.667 0 0 1 2.667 -2.667h8.666a2.667 2.667 0 0 1 2.667 2.667v8.666a2.667 2.667 0 0 1 -2.667 2.667h-8.666a2.667 2.667 0 0 1 -2.667 -2.667z" /><path d="M4.012 16.737a2.005 2.005 0 0 1 -1.012 -1.737v-10c0 -1.1 .9 -2 2 -2h10c.75 0 1.158 .385 1.5 1" /></svg>
                       </button>
                     </div>

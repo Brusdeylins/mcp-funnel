@@ -1,7 +1,7 @@
-// MCP-Funnel — Multi-user MCP server management
-// Copyright (c) 2026 Matthias Brusdeylins
-// SPDX-License-Identifier: GPL-3.0-only
-// 100% AI-generated code (vibe-coding with Claude)
+/* MCP-Funnel — Multi-user MCP server management
+ * Copyright (c) 2026 Matthias Brusdeylins
+ * SPDX-License-Identifier: GPL-3.0-only
+ * 100% AI-generated code (vibe-coding with Claude) */
 
 import express from "express"
 import session from "express-session"
@@ -13,6 +13,7 @@ import { McpFunnelConfig } from "./mcp-funnel-config.js"
 import { AuthManager } from "./mcp-funnel-auth.js"
 import { UserManager } from "./mcp-funnel-users.js"
 import { createSessionAuth } from "./middleware/session-auth.js"
+import { createSingleUserAuth } from "./middleware/single-user-auth.js"
 import { StatsManager } from "./mcp-funnel-stats.js"
 import { createAuthRoutes } from "./routes/auth-routes.js"
 import { createDashboardRoutes } from "./routes/dashboard-routes.js"
@@ -22,6 +23,7 @@ import { createSettingsRoutes } from "./routes/settings-routes.js"
 import { UserProxyManager } from "./user-proxy-manager.js"
 import { createMcpProxyRoutes } from "./routes/mcp-proxy-routes.js"
 import logger from "./mcp-funnel-log.js"
+import { getErrorMessage } from "./utils.js"
 
 const FileStore = connectSessionFileStore(session)
 
@@ -37,11 +39,11 @@ function createApp (config: McpFunnelConfig): { app: express.Application, statsM
     if (config.adminUser && config.adminPass && authManager.isSetupRequired()) {
         authManager.setupAdmin(config.adminUser, config.adminPass)
             .then(() => logger.info(`Admin auto-created from environment: ${config.adminUser}`))
-            .catch((err) => logger.error(`Failed to auto-create admin: ${err instanceof Error ? err.message : String(err)}`))
+            .catch((err) => logger.error(`Failed to auto-create admin: ${getErrorMessage(err)}`))
     }
 
     /* Trust proxy */
-    app.set("trust proxy", true)
+    app.set("trust proxy", 1)
 
     /* Security headers */
     app.use(helmet({
@@ -69,28 +71,52 @@ function createApp (config: McpFunnelConfig): { app: express.Application, statsM
     app.use(express.urlencoded({ extended: true }))
     app.use(cookieParser())
 
-    /* Session middleware */
-    const sessionsPath = path.join(config.dataDir, "sessions")
-    app.use(session({
-        store: new FileStore({
-            path: sessionsPath,
-            ttl: config.sessionMaxAge / 1000,
-            retries: 0
-        }),
-        secret: config.sessionSecret,
-        resave: false,
-        saveUninitialized: false,
-        cookie: {
-            secure: config.nodeEnv === "production",
-            httpOnly: true,
-            maxAge: config.sessionMaxAge
-        }
-    }))
+    /* Middleware factories — single-user bypasses all auth */
+    let requireAuth: ReturnType<typeof createSessionAuth>["requireAuth"]
+    let requireAdmin: ReturnType<typeof createSessionAuth>["requireAdmin"]
+    let checkSetup: ReturnType<typeof createSessionAuth>["checkSetup"]
 
-    /* Middleware factories */
-    const { requireAuth, requireAdmin, checkSetup } = createSessionAuth(authManager)
+    if (config.singleUser) {
+        /* Minimal session middleware for single-user (in-memory, no file store) */
+        app.use(session({
+            secret: config.sessionSecret,
+            resave: false,
+            saveUninitialized: false,
+            cookie: { secure: false, httpOnly: true, sameSite: "strict" }
+        }))
 
-    /* Setup check — redirect to /setup if no admin exists */
+        const singleUserAuth = createSingleUserAuth()
+        requireAuth = singleUserAuth.requireAuth
+        requireAdmin = singleUserAuth.requireAdmin
+        checkSetup = singleUserAuth.checkSetup
+    }
+    else {
+        /* Session middleware with file store */
+        const sessionsPath = path.join(config.dataDir, "sessions")
+        app.use(session({
+            store: new FileStore({
+                path: sessionsPath,
+                ttl: config.sessionMaxAge / 1000,
+                retries: 0
+            }),
+            secret: config.sessionSecret,
+            resave: false,
+            saveUninitialized: false,
+            cookie: {
+                secure: config.nodeEnv === "production",
+                httpOnly: true,
+                sameSite: "strict",
+                maxAge: config.sessionMaxAge
+            }
+        }))
+
+        const sessionAuth = createSessionAuth(authManager)
+        requireAuth = sessionAuth.requireAuth
+        requireAdmin = sessionAuth.requireAdmin
+        checkSetup = sessionAuth.checkSetup
+    }
+
+    /* Setup check — redirect to /setup if no admin exists (or to /dashboard in single-user) */
     app.use(checkSetup)
 
     /* Request logging */
@@ -124,8 +150,8 @@ function createApp (config: McpFunnelConfig): { app: express.Application, statsM
     app.use("/mcp-servers", requireAuth, createMcpRoutes(userProxyManager))
     app.use("/settings", requireAuth, createSettingsRoutes(authManager))
 
-    /* MCP protocol endpoint (API key authenticated) */
-    app.use("/mcp", createMcpProxyRoutes(userProxyManager, authManager, statsManager))
+    /* MCP protocol endpoint (API key authenticated, or bypassed in single-user mode) */
+    app.use("/mcp", createMcpProxyRoutes(userProxyManager, authManager, statsManager, config.singleUser))
 
     /* 404 */
     app.use((req, res) => {

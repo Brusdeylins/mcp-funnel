@@ -15,10 +15,13 @@ Multi-User MCP (Model Context Protocol) server management tool. Each user manage
 **MCP Proxy**
 - Funnels multiple backend MCP servers into a single endpoint per user
 - 3 meta-tools for lazy tool discovery: `mcp_discover_tools`, `mcp_get_tool_schema`, `mcp_call_tool`
-- Supports SSE and Streamable HTTP transports to backend servers
-- Exposes both JSON-RPC (Streamable HTTP) and SSE transport for MCP clients
+- Relevance scoring with fuzzy matching (Levenshtein) — typos in keywords still return results
+- Dynamic tool count in `mcp_discover_tools` description so the LLM knows how many tools are searchable
+- Supports Streamable HTTP, SSE, and Stdio transports to backend servers
+- Exposes both Streamable HTTP and SSE transport for MCP clients
 - Per-server tool enable/disable control
 - Automatic reconnection with exponential backoff
+- Forwards resource subscriptions, completions, and log messages from backend servers
 
 **User Isolation**
 - Per-user MCP server registrations (each user has their own server config file)
@@ -28,6 +31,7 @@ Multi-User MCP (Model Context Protocol) server management tool. Each user manage
 **Administration**
 - Admin setup with secure password hashing (bcrypt)
 - Multi-user support with per-user API keys
+- Single-user mode (`--single-user`) for local use without authentication
 - Web dashboard with API key management and MCP server status
 - User management (admin only)
 - Dark/light theme toggle
@@ -37,6 +41,7 @@ Multi-User MCP (Model Context Protocol) server management tool. Each user manage
 - Docker support
 - CLI with configurable port and data directory
 - Security headers via Helmet (HSTS, CSP, etc.)
+- Rate limiting on login and setup endpoints
 - Request statistics tracking per user
 
 ## Quick Start
@@ -95,6 +100,7 @@ The API key can be found in the web dashboard under Settings.
 |---------|---------|---------|-------------|
 | Port | `PORT` | `3000` | HTTP server port |
 | Data dir | `DATA_DIR` | `./data` | Data storage directory |
+| Single-user mode | `SINGLE_USER` | `false` | Run without authentication |
 | Session secret | `SESSION_SECRET` | (auto-generated) | Session cookie secret |
 | Session max age | `SESSION_MAX_AGE` | `2592000000` (30d) | Session TTL in ms |
 | Admin user | `ADMIN_USER` | (none) | Auto-create admin username |
@@ -111,6 +117,7 @@ Usage: mcp-funnel [options]
 Options:
   -p, --port <number>    HTTP port (default: 3000)
   -d, --data-dir <path>  Data directory (default: ./data)
+  --single-user          Run in single-user mode (no auth)
   -h, --help             Show help
   -V, --version          Show version
 ```
@@ -129,9 +136,10 @@ All data is stored as JSON files in the configured data directory:
 
 ```bash
 npm install
-npm run dev     # Watch mode with auto-rebuild
-npm run lint    # ESLint check
+npm run dev      # Watch mode with auto-rebuild
+npm run lint     # ESLint check
 npm run lint:fix # ESLint auto-fix
+npm test         # Run unit tests
 ```
 
 ## License

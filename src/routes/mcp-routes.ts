@@ -1,20 +1,18 @@
-// MCP-Funnel — Multi-user MCP server management
-// Copyright (c) 2026 Matthias Brusdeylins
-// SPDX-License-Identifier: GPL-3.0-only
-// 100% AI-generated code (vibe-coding with Claude)
+/* MCP-Funnel — Multi-user MCP server management
+ * Copyright (c) 2026 Matthias Brusdeylins
+ * SPDX-License-Identifier: GPL-3.0-only
+ * 100% AI-generated code (vibe-coding with Claude) */
 
 import { Router, Request, Response } from "express"
 import { UserProxyManager } from "../user-proxy-manager.js"
 import { renderMcpServersPage } from "../views/mcp-servers-view.js"
 import { trimConfigUrl } from "../mcp-server-manager.js"
+import type { ServerConfig, UrlServerConfig, StdioServerConfig } from "../mcp-server-manager.js"
 import logger from "../mcp-funnel-log.js"
+import { getErrorMessage, getSessionUserId } from "../utils.js"
 
 function createMcpRoutes (userProxyManager: UserProxyManager): Router {
     const router = Router()
-
-    function getUserId (req: Request): string {
-        return req.session.userId || "admin"
-    }
 
     /* GET /mcp-servers/manage */
     router.get("/manage", (req: Request, res: Response) => {
@@ -26,7 +24,7 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
     /* GET /mcp-servers/api/list */
     router.get("/api/list", async (req: Request, res: Response) => {
         try {
-            const userId = getUserId(req)
+            const userId = getSessionUserId(req)
             const serverManager = userProxyManager.getServerManager(userId)
             const servers = serverManager.getServers()
 
@@ -54,7 +52,7 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
             res.json({ success: true, servers: enriched })
         }
         catch (error) {
-            const msg = error instanceof Error ? error.message : String(error)
+            const msg = getErrorMessage(error)
             logger.error(`Failed to list MCP servers: ${msg}`)
             res.status(500).json({ error: "Failed to retrieve MCP servers" })
         }
@@ -64,18 +62,25 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
     router.post("/api/test", async (req: Request, res: Response) => {
         try {
             const { type } = req.body as { type: string }
-            const config = trimConfigUrl(req.body.config as { url?: string; headers?: Record<string, string> })
 
-            if (!type || !config) {
+            if (!type || !req.body.config) {
                 res.status(400).json({ error: "type and config are required" })
                 return
             }
 
-            const userId = getUserId(req)
+            let config: ServerConfig
+            if (type === "stdio") {
+                config = req.body.config as StdioServerConfig
+            }
+            else {
+                config = trimConfigUrl(req.body.config as UrlServerConfig)
+            }
+
+            const userId = getSessionUserId(req)
             const proxy = await userProxyManager.getProxy(userId)
 
             logger.info(`[${userId}] Testing MCP connection: ${type}`)
-            const result = await proxy.testConnection({ type, config: config as { url: string; headers?: Record<string, string> } })
+            const result = await proxy.testConnection({ type, config: config as unknown as Record<string, unknown> })
 
             if (result.success) {
                 res.json({
@@ -90,7 +95,7 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
             }
         }
         catch (error) {
-            const msg = error instanceof Error ? error.message : String(error)
+            const msg = getErrorMessage(error)
             logger.error(`MCP connection test failed: ${msg}`)
             res.status(500).json({ success: false, error: msg })
         }
@@ -100,20 +105,33 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
     router.post("/api/create", async (req: Request, res: Response) => {
         try {
             const { name, type } = req.body as { name: string; type: string }
-            const config = trimConfigUrl(req.body.config as { url?: string; headers?: Record<string, string> })
 
-            if (!name || !type || !config) {
+            if (!name || !type || !req.body.config) {
                 res.status(400).json({ error: "name, type, and config are required" })
                 return
             }
 
-            const userId = getUserId(req)
+            /* Restrict stdio to admin — it allows arbitrary command execution */
+            if (type === "stdio" && req.session.role !== "admin") {
+                res.status(403).json({ error: "Only admins can add stdio servers" })
+                return
+            }
+
+            let config: ServerConfig
+            if (type === "stdio") {
+                config = req.body.config as StdioServerConfig
+            }
+            else {
+                config = trimConfigUrl(req.body.config as UrlServerConfig)
+            }
+
+            const userId = getSessionUserId(req)
             const proxy = await userProxyManager.getProxy(userId)
             const serverManager = userProxyManager.getServerManager(userId)
 
             /* Test connection first */
             logger.info(`[${userId}] Testing MCP connection before adding: ${name} (${type})`)
-            const testResult = await proxy.testConnection({ type, config: config as { url: string; headers?: Record<string, string> } })
+            const testResult = await proxy.testConnection({ type, config: config as unknown as Record<string, unknown> })
 
             if (!testResult.success) {
                 logger.warn(`[${userId}] MCP connection test failed for ${name}: ${testResult.error}`)
@@ -122,7 +140,7 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
             }
 
             /* Save the server */
-            const newServer = serverManager.addServer({ name, type: type as "sse" | "http", config: config as { url: string; headers?: Record<string, string> } })
+            const newServer = serverManager.addServer({ name, type: type as "sse" | "http" | "stdio", config })
             serverManager.updateConnectionStatus(newServer.id, true)
 
             /* Connect in proxy */
@@ -131,11 +149,12 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
                 logger.info(`[${userId}] MCP server added and connected: ${name} (${type}) - ${testResult.toolCount} tools`)
             }
             catch (connectError) {
-                const cmsg = connectError instanceof Error ? connectError.message : String(connectError)
+                const cmsg = getErrorMessage(connectError)
                 logger.warn(`[${userId}] MCP server added but proxy connection failed: ${cmsg}`)
             }
 
             userProxyManager.updateStats(userId)
+            await proxy.notifyToolListChanged()
 
             res.json({
                 success: true,
@@ -146,7 +165,7 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
             })
         }
         catch (error) {
-            const msg = error instanceof Error ? error.message : String(error)
+            const msg = getErrorMessage(error)
             logger.error(`Failed to add MCP server: ${msg}`)
             res.status(400).json({ error: msg })
         }
@@ -155,26 +174,34 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
     /* PUT /mcp-servers/api/:id */
     router.put("/api/:id", (req: Request, res: Response) => {
         try {
-            const userId = getUserId(req)
+            const userId = getSessionUserId(req)
             const serverManager = userProxyManager.getServerManager(userId)
             const id = req.params["id"] as string
 
             const { name, enabled } = req.body as { name?: string; enabled?: boolean }
-            const config = req.body.config !== undefined ?
-                trimConfigUrl(req.body.config as { url?: string; headers?: Record<string, string> }) :
-                undefined
 
-            const updates: { name?: string; enabled?: boolean; config?: { url: string; headers?: Record<string, string> } } = {}
+            let config: ServerConfig | undefined
+            if (req.body.config !== undefined) {
+                const existingServer = serverManager.getServer(id)
+                if (existingServer && existingServer.type === "stdio") {
+                    config = req.body.config as StdioServerConfig
+                }
+                else {
+                    config = trimConfigUrl(req.body.config as UrlServerConfig)
+                }
+            }
+
+            const updates: { name?: string; enabled?: boolean; config?: ServerConfig } = {}
             if (name !== undefined) updates.name = name
             if (enabled !== undefined) updates.enabled = enabled
-            if (config !== undefined) updates.config = config as { url: string; headers?: Record<string, string> }
+            if (config !== undefined) updates.config = config
 
             const server = serverManager.updateServer(id, updates)
 
             res.json({ success: true, message: "MCP server updated successfully", server })
         }
         catch (error) {
-            const msg = error instanceof Error ? error.message : String(error)
+            const msg = getErrorMessage(error)
             if (msg === "MCP server not found") {
                 res.status(404).json({ error: msg })
                 return
@@ -187,7 +214,7 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
     /* POST /mcp-servers/api/:id/toggle */
     router.post("/api/:id/toggle", async (req: Request, res: Response) => {
         try {
-            const userId = getUserId(req)
+            const userId = getSessionUserId(req)
             const serverManager = userProxyManager.getServerManager(userId)
             const id = req.params["id"] as string
 
@@ -201,7 +228,7 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
                         await proxy.connectServer(server)
                     }
                     catch (err) {
-                        const emsg = err instanceof Error ? err.message : String(err)
+                        const emsg = getErrorMessage(err)
                         logger.warn(`[${userId}] Failed to connect toggled server: ${emsg}`)
                     }
                 }
@@ -209,12 +236,13 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
                     await proxy.disconnectServer(id)
                 }
                 userProxyManager.updateStats(userId)
+                await proxy.notifyToolListChanged()
             }
 
             res.json({ success: true, message: `MCP server ${server.enabled ? "enabled" : "disabled"}`, server })
         }
         catch (error) {
-            const msg = error instanceof Error ? error.message : String(error)
+            const msg = getErrorMessage(error)
             if (msg === "MCP server not found") {
                 res.status(404).json({ error: msg })
                 return
@@ -227,7 +255,7 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
     /* DELETE /mcp-servers/api/:id */
     router.delete("/api/:id", async (req: Request, res: Response) => {
         try {
-            const userId = getUserId(req)
+            const userId = getSessionUserId(req)
             const serverManager = userProxyManager.getServerManager(userId)
             const id = req.params["id"] as string
 
@@ -240,10 +268,15 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
             serverManager.deleteServer(id)
             userProxyManager.updateStats(userId)
 
+            if (userProxyManager.isInitialized(userId)) {
+                const proxyForNotify = await userProxyManager.getProxy(userId)
+                await proxyForNotify.notifyToolListChanged()
+            }
+
             res.json({ success: true, message: "MCP server deleted successfully" })
         }
         catch (error) {
-            const msg = error instanceof Error ? error.message : String(error)
+            const msg = getErrorMessage(error)
             if (msg === "MCP server not found") {
                 res.status(404).json({ error: msg })
                 return
@@ -256,7 +289,7 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
     /* GET /mcp-servers/api/:id/tools */
     router.get("/api/:id/tools", async (req: Request, res: Response) => {
         try {
-            const userId = getUserId(req)
+            const userId = getSessionUserId(req)
             const serverManager = userProxyManager.getServerManager(userId)
             const id = req.params["id"] as string
 
@@ -287,16 +320,16 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
             })
         }
         catch (error) {
-            const msg = error instanceof Error ? error.message : String(error)
+            const msg = getErrorMessage(error)
             logger.error(`Failed to get server tools: ${msg}`)
             res.status(500).json({ error: "Failed to get server tools" })
         }
     })
 
     /* PUT /mcp-servers/api/:id/tools */
-    router.put("/api/:id/tools", (req: Request, res: Response) => {
+    router.put("/api/:id/tools", async (req: Request, res: Response) => {
         try {
-            const userId = getUserId(req)
+            const userId = getSessionUserId(req)
             const serverManager = userProxyManager.getServerManager(userId)
             const id = req.params["id"] as string
             const { disabledTools } = req.body as { disabledTools: string[] }
@@ -309,6 +342,11 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
             const server = serverManager.updateDisabledTools(id, disabledTools)
             userProxyManager.updateStats(userId)
 
+            if (userProxyManager.isInitialized(userId)) {
+                const proxy = await userProxyManager.getProxy(userId)
+                await proxy.notifyToolListChanged()
+            }
+
             res.json({
                 success: true,
                 message: `Updated tool settings for ${server.name}`,
@@ -316,7 +354,7 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
             })
         }
         catch (error) {
-            const msg = error instanceof Error ? error.message : String(error)
+            const msg = getErrorMessage(error)
             if (msg === "MCP server not found") {
                 res.status(404).json({ error: msg })
                 return
@@ -329,12 +367,13 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
     /* POST /mcp-servers/api/refresh */
     router.post("/api/refresh", async (req: Request, res: Response) => {
         try {
-            const userId = getUserId(req)
+            const userId = getSessionUserId(req)
             logger.info(`[${userId}] Refreshing all MCP server connections`)
 
             const proxy = await userProxyManager.getProxy(userId)
             await proxy.refresh()
             userProxyManager.updateStats(userId)
+            await proxy.notifyToolListChanged()
 
             const serverManager = userProxyManager.getServerManager(userId)
             const servers = serverManager.getServers()
@@ -346,7 +385,7 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
             res.json({ success: true, message: "All MCP connections refreshed", servers: enriched })
         }
         catch (error) {
-            const msg = error instanceof Error ? error.message : String(error)
+            const msg = getErrorMessage(error)
             logger.error(`Failed to refresh MCP connections: ${msg}`)
             res.status(500).json({ error: "Failed to refresh connections" })
         }
@@ -355,7 +394,7 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
     /* POST /mcp-servers/api/:id/refresh */
     router.post("/api/:id/refresh", async (req: Request, res: Response) => {
         try {
-            const userId = getUserId(req)
+            const userId = getSessionUserId(req)
             const serverManager = userProxyManager.getServerManager(userId)
             const id = req.params["id"] as string
 
@@ -376,6 +415,7 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
             }
 
             userProxyManager.updateStats(userId)
+            await proxy.notifyToolListChanged()
 
             res.json({
                 success: true,
@@ -384,10 +424,10 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
             })
         }
         catch (error) {
-            const msg = error instanceof Error ? error.message : String(error)
+            const msg = getErrorMessage(error)
             try {
                 const id = req.params["id"] as string
-                const serverManager = userProxyManager.getServerManager(getUserId(req))
+                const serverManager = userProxyManager.getServerManager(getSessionUserId(req))
                 serverManager.updateConnectionStatus(id, false, msg)
             }
             catch {

@@ -1,7 +1,13 @@
-// MCP-Funnel — Multi-user MCP server management
-// Copyright (c) 2026 Matthias Brusdeylins
-// SPDX-License-Identifier: GPL-3.0-only
-// 100% AI-generated code (vibe-coding with Claude)
+/* MCP-Funnel — Multi-user MCP server management
+ * Copyright (c) 2026 Matthias Brusdeylins
+ * SPDX-License-Identifier: GPL-3.0-only
+ * 100% AI-generated code (vibe-coding with Claude) */
+
+import { VERSION } from "../utils.js"
+
+function escapeHtml (str: string): string {
+    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;")
+}
 
 interface LayoutOptions {
     title: string
@@ -60,7 +66,7 @@ function generateSidebar (currentPage: string, role: "admin" | "user", username:
 
     menuItems.push({ id: "settings", icon: "settings", label: "Settings", href: "/settings" })
 
-    const menuHTML = menuItems.map(item => {
+    const menuHTML = menuItems.map((item) => {
         const active = item.id === currentPage ? "active" : ""
         return `
       <li class="nav-item ${active}">
@@ -89,7 +95,7 @@ function generateSidebar (currentPage: string, role: "admin" | "user", username:
               <span class="navbar-brand-text">MCP-Funnel</span>
             </a>
           </h1>
-          <small class="text-secondary" style="font-size: 0.65rem; opacity: 0.5; margin-top: -0.25rem;">v1.0.0</small>
+          <small class="text-secondary" style="font-size: 0.65rem; opacity: 0.5; margin-top: -0.25rem;">v${VERSION}</small>
         </div>
         <h1 class="navbar-brand navbar-brand-autodark d-lg-none mb-0">
           <a href="/dashboard" class="d-flex align-items-center" style="color: inherit; text-decoration: none;">
@@ -138,7 +144,7 @@ function generateSidebar (currentPage: string, role: "admin" | "user", username:
                       <path d="M18 15l3 -3" />
                     </svg>
                   </span>
-                  <span class="nav-link-title">Logout (${username})</span>
+                  <span class="nav-link-title">Logout (${escapeHtml(username)})</span>
                 </a>
               </li>
             </ul>
@@ -224,4 +230,4 @@ function generateLayout (opts: LayoutOptions): string {
 </html>`
 }
 
-export { generateLayout, generatePageHeader, inlineLogo, MCP_LOGO_PATHS, MCP_FUNNEL_FAVICON }
+export { generateLayout, generatePageHeader, inlineLogo, escapeHtml, MCP_LOGO_PATHS, MCP_FUNNEL_FAVICON }

@@ -1,6 +1,6 @@
 {
   "name": "mcp-funnel",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Multi-user MCP server management tool - funnels multiple MCP servers into a single endpoint per user",
   "main": "dst/mcp-funnel.js",
   "bin": {
@@ -8,27 +8,30 @@
   },
   "scripts": {
     "build": "tsc",
+    "build:test": "tsc -p etc/tsconfig.test.json",
+    "test": "npm run build:test && node --test dst-test/test/*.test.js",
     "start": "node dst/mcp-funnel.js",
     "dev": "nodemon --watch src --ext ts --exec 'npm run build && npm start'",
     "lint": "eslint --config etc/eslint.mjs src/",
     "lint:fix": "eslint --config etc/eslint.mjs src/ --fix",
-    "clean": "rm -rf dst"
+    "clean": "rm -rf dst dst-test"
   },
   "engines": {
     "node": ">=18.0.0"
   },
   "license": "GPL-3.0-only",
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.26.0",
     "bcryptjs": "^3.0.2",
     "commander": "^13.0.0",
     "cookie-parser": "^1.4.7",
     "express": "^4.21.0",
+    "express-rate-limit": "^8.2.1",
     "express-session": "^1.18.2",
     "helmet": "^8.1.0",
     "session-file-store": "^1.5.0",
     "uuid": "^11.1.0",
-    "winston": "^3.17.0",
-    "@modelcontextprotocol/sdk": "^1.26.0"
+    "winston": "^3.17.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",

@@ -1,19 +1,34 @@
-// MCP-Funnel — Multi-user MCP server management
-// Copyright (c) 2026 Matthias Brusdeylins
-// SPDX-License-Identifier: GPL-3.0-only
-// 100% AI-generated code (vibe-coding with Claude)
+/* MCP-Funnel — Multi-user MCP server management
+ * Copyright (c) 2026 Matthias Brusdeylins
+ * SPDX-License-Identifier: GPL-3.0-only
+ * 100% AI-generated code (vibe-coding with Claude) */
 
+import { randomUUID } from "node:crypto"
+import type { IncomingMessage, ServerResponse } from "node:http"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
+import { Server } from "@modelcontextprotocol/sdk/server/index.js"
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js"
+import {
+    ListToolsRequestSchema, CallToolRequestSchema,
+    ListPromptsRequestSchema, GetPromptRequestSchema,
+    ListResourcesRequestSchema, ReadResourceRequestSchema,
+    SubscribeRequestSchema, UnsubscribeRequestSchema,
+    CompleteRequestSchema, SetLevelRequestSchema,
+    ResourceUpdatedNotificationSchema, LoggingMessageNotificationSchema
+} from "@modelcontextprotocol/sdk/types.js"
 import logger from "./mcp-funnel-log.js"
-import { McpServerManager, McpServerEntry } from "./mcp-server-manager.js"
-import { isMetaTool, getMetaTools, searchTools, META_TOOLS } from "./mcp-meta-tools.js"
-import type { SearchWords, ToolWithServer } from "./mcp-meta-tools.js"
+import { VERSION, getErrorMessage } from "./utils.js"
+import { McpServerManager, McpServerEntry, isUrlConfig, isStdioConfig } from "./mcp-server-manager.js"
+
+import { isMetaTool, getMetaTools, searchTools } from "./mcp-meta-tools.js"
+import type { SearchWords, ToolWithServer, MetaTool } from "./mcp-meta-tools.js"
 
 interface ServerConnection {
     client: Client
-    transport: SSEClientTransport | StreamableHTTPClientTransport
+    transport: SSEClientTransport | StreamableHTTPClientTransport | StdioClientTransport
     tools: ToolWithServer[]
     serverInfo: { name?: string; version?: string } | undefined
     capabilities: Record<string, unknown> | undefined
@@ -27,18 +42,16 @@ interface ReconnectState {
     timeoutId: ReturnType<typeof setTimeout> | null
 }
 
-interface JsonRpcRequest {
-    jsonrpc: string
-    id?: string | number | null
-    method: string
-    params?: Record<string, unknown>
-}
-
-interface JsonRpcResponse {
-    jsonrpc: string
-    id?: string | number | null
-    result?: unknown
-    error?: { code: number; message: string }
+/* MCP logging levels in ascending severity (RFC 5424) */
+const LOG_LEVEL_SEVERITY: Record<string, number> = {
+    debug: 0,
+    info: 1,
+    notice: 2,
+    warning: 3,
+    error: 4,
+    critical: 5,
+    alert: 6,
+    emergency: 7
 }
 
 class McpProxyService {
@@ -47,11 +60,26 @@ class McpProxyService {
     private serverManager: McpServerManager
     private userId: string
 
+    /* Inbound SDK Server + transport (multi-session) */
+    private inboundSessions = new Map<string, { server: Server; transport: StreamableHTTPServerTransport; createdAt: number; lastActivity: number }>()
+    private subscribedResources = new Set<string>()
+
+    /* uri → serverId */
+    private resourceOwners = new Map<string, string>()
+    private logLevel = "warning"
+    private sessionCleanupTimer: ReturnType<typeof setInterval> | null = null
+
     private readonly PING_INTERVAL = 30000
     private readonly MAX_RECONNECT_ATTEMPTS = 5
     private readonly INITIAL_BACKOFF_MS = 5000
     private readonly MAX_BACKOFF_MS = 300000
     private readonly COOLDOWN_MS = 600000
+
+    /* 30 minutes */
+    private readonly SESSION_IDLE_TTL = 30 * 60 * 1000
+
+    /* 5 minutes */
+    private readonly SESSION_CLEANUP_INTERVAL = 5 * 60 * 1000
 
     constructor (serverManager: McpServerManager, userId: string) {
         this.connections = new Map()
@@ -69,27 +97,329 @@ class McpProxyService {
                 await this.connectServer(server)
             }
             catch (error) {
-                const msg = error instanceof Error ? error.message : String(error)
+                const msg = getErrorMessage(error)
                 logger.error(`[${this.userId}] Failed to connect to MCP server ${server.name}: ${msg}`)
                 this.serverManager.updateConnectionStatus(server.id, false, msg)
             }
         }
+
+        this.sessionCleanupTimer = setInterval(() => this.cleanupStaleSessions(), this.SESSION_CLEANUP_INTERVAL)
+        logger.info(`[${this.userId}] Inbound SDK Server ready for sessions`)
+    }
+
+    private cleanupStaleSessions (): void {
+        const now = Date.now()
+        for (const [sessionId, session] of this.inboundSessions.entries()) {
+            if (now - session.lastActivity > this.SESSION_IDLE_TTL) {
+                logger.info(`[${this.userId}] Closing stale inbound session: ${sessionId}`)
+                session.transport.close().catch(() => {})
+                session.server.close().catch(() => {})
+                this.inboundSessions.delete(sessionId)
+            }
+        }
+    }
+
+    private async createInboundSession (): Promise<{ server: Server; transport: StreamableHTTPServerTransport }> {
+        const server = new Server(
+            { name: "mcp-funnel", version: VERSION },
+            {
+                capabilities: {
+                    tools: { listChanged: true },
+                    prompts: { listChanged: true },
+                    resources: { subscribe: true, listChanged: true },
+                    logging: {},
+                    completions: {}
+                }
+            }
+        )
+
+        this.registerInboundHandlers(server)
+
+        const transport = new StreamableHTTPServerTransport({
+            sessionIdGenerator: () => randomUUID(),
+            enableJsonResponse: true,
+            onsessioninitialized: (sessionId: string) => {
+                const now = Date.now()
+                this.inboundSessions.set(sessionId, { server, transport, createdAt: now, lastActivity: now })
+                logger.debug(`[${this.userId}] New inbound session: ${sessionId}`)
+            }
+        })
+
+        transport.onclose = () => {
+            const sessionId = transport.sessionId
+            if (sessionId) {
+                this.inboundSessions.delete(sessionId)
+                logger.debug(`[${this.userId}] Inbound session closed: ${sessionId}`)
+            }
+
+            /* Clear stale subscriptions when no sessions remain */
+            if (this.inboundSessions.size === 0)
+                this.subscribedResources.clear()
+        }
+
+        await server.connect(transport)
+        return { server, transport }
+    }
+
+    private registerInboundHandlers (server: Server): void {
+        /* tools/list */
+        server.setRequestHandler(ListToolsRequestSchema, async () => {
+            return { tools: this.getExposedTools() }
+        })
+
+        /* tools/call */
+        server.setRequestHandler(CallToolRequestSchema, async (request) => {
+            const { name, arguments: args } = request.params
+            if (isMetaTool(name)) {
+                return await this.handleMetaToolCall(name, args || {}) as { content: Array<{ type: string; text?: string }> }
+            }
+            return await this.callTool(name, args || {}) as { content: Array<{ type: string; text?: string }> }
+        })
+
+        /* prompts/list */
+        server.setRequestHandler(ListPromptsRequestSchema, async () => {
+            const prompts = await this.getAllPrompts()
+            return { prompts: prompts as Array<{ name: string; description?: string; arguments?: Array<{ name: string; description?: string; required?: boolean }> }> }
+        })
+
+        /* prompts/get */
+        server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+            const { name, arguments: promptArgs } = request.params
+            for (const conn of this.connections.values()) {
+                const caps = conn.capabilities as Record<string, unknown> | undefined
+                if (caps?.prompts) {
+                    try {
+                        return await conn.client.getPrompt({ name, arguments: promptArgs })
+                    }
+                    catch {
+                        /* Try next server */
+                    }
+                }
+            }
+            throw new Error(`Prompt not found: ${name}`)
+        })
+
+        /* resources/list */
+        server.setRequestHandler(ListResourcesRequestSchema, async () => {
+            const resources = await this.getAllResources()
+            return { resources: resources as Array<{ uri: string; name: string; description?: string; mimeType?: string }> }
+        })
+
+        /* resources/read */
+        server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+            const { uri } = request.params
+            for (const conn of this.connections.values()) {
+                const caps = conn.capabilities as Record<string, unknown> | undefined
+                if (caps?.resources) {
+                    try {
+                        return await conn.client.readResource({ uri })
+                    }
+                    catch {
+                        /* Try next server */
+                    }
+                }
+            }
+            throw new Error(`Resource not found: ${uri}`)
+        })
+
+        /* resources/subscribe */
+        server.setRequestHandler(SubscribeRequestSchema, async (request) => {
+            const { uri } = request.params
+            this.subscribedResources.add(uri)
+
+            /* Forward subscription to the backend that owns this resource */
+            const ownerId = this.resourceOwners.get(uri)
+            const ownerConn = ownerId ? this.connections.get(ownerId) : undefined
+            if (ownerConn) {
+                try {
+                    await ownerConn.client.subscribeResource({ uri })
+                }
+                catch {
+                    /* Backend may not support subscribe — ignore */
+                }
+            }
+            else {
+                /* Owner unknown — try all resource-capable backends */
+                for (const conn of this.connections.values()) {
+                    const caps = conn.capabilities as Record<string, unknown> | undefined
+                    if (caps?.resources) {
+                        try { await conn.client.subscribeResource({ uri }) }
+                        catch { /* ignore */ }
+                    }
+                }
+            }
+            return {}
+        })
+
+        /* resources/unsubscribe */
+        server.setRequestHandler(UnsubscribeRequestSchema, async (request) => {
+            const { uri } = request.params
+            this.subscribedResources.delete(uri)
+
+            const ownerId = this.resourceOwners.get(uri)
+            const ownerConn = ownerId ? this.connections.get(ownerId) : undefined
+            if (ownerConn) {
+                try {
+                    await ownerConn.client.unsubscribeResource({ uri })
+                }
+                catch {
+                    /* Ignore */
+                }
+            }
+            else {
+                /* Owner unknown — try all resource-capable backends */
+                for (const conn of this.connections.values()) {
+                    const caps = conn.capabilities as Record<string, unknown> | undefined
+                    if (caps?.resources) {
+                        try { await conn.client.unsubscribeResource({ uri }) }
+                        catch { /* ignore */ }
+                    }
+                }
+            }
+            return {}
+        })
+
+        /* completion/complete */
+        server.setRequestHandler(CompleteRequestSchema, async (request) => {
+            const { ref, argument } = request.params
+
+            /* Find the backend server that owns the prompt/resource referenced */
+            for (const conn of this.connections.values()) {
+                const caps = conn.capabilities as Record<string, unknown> | undefined
+                const refType = ref.type
+
+                if (refType === "ref/prompt" && caps?.prompts) {
+                    try {
+                        return await conn.client.complete({ ref, argument })
+                    }
+                    catch {
+                        /* Try next server */
+                    }
+                }
+                else if (refType === "ref/resource" && caps?.resources) {
+                    try {
+                        return await conn.client.complete({ ref, argument })
+                    }
+                    catch {
+                        /* Try next server */
+                    }
+                }
+            }
+
+            /* No backend supports completions or ref not found */
+            return { completion: { values: [] } }
+        })
+
+        /* logging/setLevel */
+        server.setRequestHandler(SetLevelRequestSchema, async (request) => {
+            this.logLevel = request.params.level
+            logger.info(`[${this.userId}] MCP log level set to: ${this.logLevel}`)
+            return {}
+        })
+    }
+
+    async handleInboundRequest (req: IncomingMessage & { body?: unknown }, res: ServerResponse): Promise<void> {
+        const body = req.body
+
+        /* Check if this is an initialize request (needs new session) */
+        if (req.method === "POST" && this.isInitializeRequest(body)) {
+            const { transport } = await this.createInboundSession()
+            await transport.handleRequest(req, res, body)
+            return
+        }
+
+        /* For non-initialize requests, look up transport by session ID */
+        const sessionId = req.headers["mcp-session-id"] as string | undefined
+        if (sessionId) {
+            const session = this.inboundSessions.get(sessionId)
+            if (session) {
+                session.lastActivity = Date.now()
+                await session.transport.handleRequest(req, res, body)
+                return
+            }
+        }
+
+        /* No valid session */
+        res.writeHead(400, { "Content-Type": "application/json" })
+        res.end(JSON.stringify({
+            jsonrpc: "2.0",
+            error: { code: -32000, message: "Bad Request: Server not initialized" },
+            id: null
+        }))
+    }
+
+    private isInitializeRequest (body: unknown): boolean {
+        if (!body || typeof body !== "object") return false
+        const msg = body as { method?: string }
+        if (msg.method === "initialize") return true
+        /* Batch request — check if any message is initialize */
+        if (Array.isArray(body)) {
+            return body.some((m) => m && typeof m === "object" && m.method === "initialize")
+        }
+        return false
+    }
+
+    private async notifyInboundSessions (action: (server: Server) => Promise<void>, label: string): Promise<void> {
+        for (const { server } of this.inboundSessions.values()) {
+            try {
+                await action(server)
+            }
+            catch (e) {
+                const msg = getErrorMessage(e)
+                logger.debug(`[${this.userId}] Failed to send ${label} notification: ${msg}`)
+            }
+        }
+    }
+
+    async notifyToolListChanged (): Promise<void> {
+        await this.notifyInboundSessions((s) => s.sendToolListChanged(), "tool list changed")
+    }
+
+    async notifyResourceListChanged (): Promise<void> {
+        await this.notifyInboundSessions((s) => s.sendResourceListChanged(), "resource list changed")
+    }
+
+    async notifyPromptListChanged (): Promise<void> {
+        await this.notifyInboundSessions((s) => s.sendPromptListChanged(), "prompt list changed")
     }
 
     async shutdown (): Promise<void> {
         logger.info(`[${this.userId}] Shutting down MCP proxy`)
+        if (this.sessionCleanupTimer) {
+            clearInterval(this.sessionCleanupTimer)
+            this.sessionCleanupTimer = null
+        }
         for (const serverId of this.reconnectState.keys()) {
             this.cancelReconnect(serverId)
         }
         for (const serverId of [...this.connections.keys()]) {
             await this.closeConnection(serverId)
         }
+
+        /* Close all inbound sessions */
+        for (const [sessionId, { server, transport }] of this.inboundSessions.entries()) {
+            try {
+                await transport.close()
+            }
+            catch (e) {
+                const msg = getErrorMessage(e)
+                logger.debug(`[${this.userId}] Error closing inbound transport ${sessionId}: ${msg}`)
+            }
+            try {
+                await server.close()
+            }
+            catch (e) {
+                const msg = getErrorMessage(e)
+                logger.debug(`[${this.userId}] Error closing inbound server ${sessionId}: ${msg}`)
+            }
+        }
+        this.inboundSessions.clear()
     }
 
     async connectServer (server: McpServerEntry): Promise<void> {
         logger.info(`[${this.userId}] Connecting to MCP server: ${server.name} (${server.type})`)
 
-        let transport: SSEClientTransport | StreamableHTTPClientTransport
+        let transport: SSEClientTransport | StreamableHTTPClientTransport | StdioClientTransport
 
         switch (server.type) {
             case "sse":
@@ -98,12 +428,15 @@ class McpProxyService {
             case "http":
                 transport = this.createHTTPTransport(server)
                 break
+            case "stdio":
+                transport = this.createStdioTransport(server)
+                break
             default:
                 throw new Error(`Unknown server type: ${server.type}`)
         }
 
         const client = new Client(
-            { name: "mcp-funnel", version: "1.0.0" },
+            { name: "mcp-funnel", version: VERSION },
             { capabilities: {} }
         )
 
@@ -163,7 +496,7 @@ class McpProxyService {
                         logger.debug(`[${this.userId}] Keep-alive ping sent to ${server.name}`)
                     }
                     catch (err) {
-                        const msg = err instanceof Error ? err.message : String(err)
+                        const msg = getErrorMessage(err)
                         logger.warn(`[${this.userId}] Keep-alive ping failed for ${server.name}: ${msg}`)
                     }
                 }, this.PING_INTERVAL)
@@ -179,6 +512,9 @@ class McpProxyService {
             })
 
             this.serverManager.updateConnectionStatus(server.id, true)
+
+            /* Forward notifications from backend clients to inbound MCP clients */
+            this.registerBackendNotifications(client)
         }
         catch (error) {
             try {
@@ -191,7 +527,42 @@ class McpProxyService {
         }
     }
 
+    private registerBackendNotifications (client: Client): void {
+        /* Forward resource updated notifications to all active inbound sessions */
+        client.setNotificationHandler(ResourceUpdatedNotificationSchema, async (notification) => {
+            if (this.subscribedResources.has(notification.params.uri)) {
+                for (const { server } of this.inboundSessions.values()) {
+                    try {
+                        await server.sendResourceUpdated({ uri: notification.params.uri })
+                    }
+                    catch (e) {
+                        const msg = getErrorMessage(e)
+                        logger.debug(`[${this.userId}] Failed to forward resource updated notification: ${msg}`)
+                    }
+                }
+            }
+        })
+
+        /* Forward logging messages to all active inbound sessions (filtered by logLevel) */
+        client.setNotificationHandler(LoggingMessageNotificationSchema, async (notification) => {
+            const msgSeverity = LOG_LEVEL_SEVERITY[notification.params.level] ?? 0
+            const threshold = LOG_LEVEL_SEVERITY[this.logLevel] ?? 3
+            if (msgSeverity < threshold) return
+
+            for (const { server } of this.inboundSessions.values()) {
+                try {
+                    await server.sendLoggingMessage(notification.params)
+                }
+                catch (e) {
+                    const msg = getErrorMessage(e)
+                    logger.debug(`[${this.userId}] Failed to forward logging message: ${msg}`)
+                }
+            }
+        })
+    }
+
     private createSSETransport (server: McpServerEntry): SSEClientTransport {
+        if (!isUrlConfig(server.config)) throw new Error("SSE transport requires URL config")
         const url = new URL(server.config.url)
         const headers = server.config.headers || {}
 
@@ -206,6 +577,7 @@ class McpProxyService {
     }
 
     private createHTTPTransport (server: McpServerEntry): StreamableHTTPClientTransport {
+        if (!isUrlConfig(server.config)) throw new Error("HTTP transport requires URL config")
         const url = new URL(server.config.url)
         const headers = server.config.headers || {}
 
@@ -218,18 +590,34 @@ class McpProxyService {
         return new StreamableHTTPClientTransport(url, options)
     }
 
+    private createStdioTransport (server: McpServerEntry): StdioClientTransport {
+        if (!isStdioConfig(server.config)) throw new Error("Stdio transport requires command config")
+        const config = server.config
+        return new StdioClientTransport({
+            command: config.command,
+            args: config.args,
+            env: config.env ? { ...process.env, ...config.env } as Record<string, string> : undefined,
+            cwd: config.cwd,
+            stderr: "pipe"
+        })
+    }
+
+    private getEnabledTools (serverId: string, tools: ToolWithServer[]): ToolWithServer[] {
+        const disabled = new Set(this.serverManager.getDisabledTools(serverId))
+        return tools.filter((t) => !disabled.has(t.name))
+    }
+
     getAllToolsInternal (): ToolWithServer[] {
         const allTools: ToolWithServer[] = []
         for (const [serverId, conn] of this.connections.entries()) {
-            const disabledTools = this.serverManager.getDisabledTools(serverId)
-            const enabledTools = conn.tools.filter((t) => !disabledTools.includes(t.name))
-            allTools.push(...enabledTools)
+            allTools.push(...this.getEnabledTools(serverId, conn.tools))
         }
         return allTools
     }
 
-    getAllTools (): typeof META_TOOLS {
-        return getMetaTools()
+    /* Returns the tools exposed to MCP clients (meta-tools only). */
+    getExposedTools (): MetaTool[] {
+        return getMetaTools(this.getAllToolsInternal().length)
     }
 
     private discoverTools (words: SearchWords, limit = 10) {
@@ -279,16 +667,17 @@ class McpProxyService {
             return { tools: [], disabledTools: [], connected: false }
         }
 
-        const disabledTools = this.serverManager.getDisabledTools(serverId)
+        const disabledToolsList = this.serverManager.getDisabledTools(serverId)
+        const disabledToolsSet = new Set(disabledToolsList)
         const tools = conn.tools.map((t) => ({
             name: t.name,
             description: t.description,
-            disabled: disabledTools.includes(t.name)
+            disabled: disabledToolsSet.has(t.name)
         }))
 
         return {
             tools,
-            disabledTools,
+            disabledTools: disabledToolsList,
             connected: true,
             serverInfo: conn.serverInfo
         }
@@ -328,7 +717,7 @@ class McpProxyService {
                 }
             }
             catch (e) {
-                const msg = e instanceof Error ? e.message : String(e)
+                const msg = getErrorMessage(e)
                 logger.debug(`[${this.userId}] On-demand reconnect failed for ${server.name}: ${msg}`)
             }
         }
@@ -387,7 +776,7 @@ class McpProxyService {
                 logger.info(`[${this.userId}] MCP server ${server.name}: reconnected successfully`)
             }
             catch (e) {
-                const msg = e instanceof Error ? e.message : String(e)
+                const msg = getErrorMessage(e)
                 logger.error(`[${this.userId}] MCP server ${server.name}: reconnect failed: ${msg}`)
                 this.scheduleReconnect(serverId)
             }
@@ -407,6 +796,12 @@ class McpProxyService {
         const conn = this.connections.get(serverId)
         if (!conn) return
 
+        /* Clean up resource ownership entries for this server */
+        for (const [uri, owner] of this.resourceOwners.entries()) {
+            if (owner === serverId)
+                this.resourceOwners.delete(uri)
+        }
+
         if (conn.pingInterval) {
             clearInterval(conn.pingInterval)
             conn.pingInterval = null
@@ -416,7 +811,7 @@ class McpProxyService {
             await conn.transport.close()
         }
         catch (e) {
-            const msg = e instanceof Error ? e.message : String(e)
+            const msg = getErrorMessage(e)
             logger.debug(`[${this.userId}] Error closing transport for ${serverId}: ${msg}`)
         }
 
@@ -425,7 +820,7 @@ class McpProxyService {
                 await conn.client.close()
             }
             catch (e) {
-                const msg = e instanceof Error ? e.message : String(e)
+                const msg = getErrorMessage(e)
                 logger.debug(`[${this.userId}] Error closing client for ${serverId}: ${msg}`)
             }
         }
@@ -471,7 +866,7 @@ class McpProxyService {
             return result as { content: Array<{ type: string; text?: string; [key: string]: unknown }> }
         }
         catch (error) {
-            const msg = error instanceof Error ? error.message : String(error)
+            const msg = getErrorMessage(error)
             logger.error(`[${this.userId}] Tool call failed (${toolName}): ${msg}`)
 
             if (retryOnSessionError && error instanceof Error && this.isSessionError(error)) {
@@ -481,7 +876,7 @@ class McpProxyService {
                     return await this.callTool(toolName, args, false)
                 }
                 catch (reconnectError) {
-                    const rmsg = reconnectError instanceof Error ? reconnectError.message : String(reconnectError)
+                    const rmsg = getErrorMessage(reconnectError)
                     logger.error(`[${this.userId}] Reconnection failed: ${rmsg}`)
                     throw error
                 }
@@ -506,7 +901,7 @@ class McpProxyService {
                     allPrompts.push(...prompts)
                 }
                 catch (e) {
-                    const msg = e instanceof Error ? e.message : String(e)
+                    const msg = getErrorMessage(e)
                     logger.warn(`[${this.userId}] Failed to list prompts from ${conn.serverInfo?.name}: ${msg}`)
                 }
             }
@@ -526,147 +921,18 @@ class McpProxyService {
                         _serverId: serverId,
                         _serverName: conn.serverInfo?.name
                     }))
+                    for (const r of resources) {
+                        this.resourceOwners.set(r.uri, serverId)
+                    }
                     allResources.push(...resources)
                 }
                 catch (e) {
-                    const msg = e instanceof Error ? e.message : String(e)
+                    const msg = getErrorMessage(e)
                     logger.warn(`[${this.userId}] Failed to list resources from ${conn.serverInfo?.name}: ${msg}`)
                 }
             }
         }
         return allResources
-    }
-
-    async handleRequest (request: JsonRpcRequest): Promise<JsonRpcResponse | null> {
-        const { method, params, id } = request
-
-        try {
-            switch (method) {
-                case "initialize":
-                    return {
-                        jsonrpc: "2.0",
-                        id,
-                        result: {
-                            protocolVersion: "2024-11-05",
-                            capabilities: {
-                                tools: { listChanged: false },
-                                prompts: { listChanged: false },
-                                resources: { listChanged: false }
-                            },
-                            serverInfo: { name: "mcp-funnel", version: "1.0.0" }
-                        }
-                    }
-
-                case "notifications/initialized":
-                    return null
-
-                case "tools/list":
-                    return {
-                        jsonrpc: "2.0",
-                        id,
-                        result: { tools: this.getAllTools() }
-                    }
-
-                case "tools/call": {
-                    const p = params as { name: string; arguments?: Record<string, unknown> } | undefined
-                    let toolResult
-                    if (p && isMetaTool(p.name)) {
-                        toolResult = await this.handleMetaToolCall(p.name, p.arguments || {})
-                    }
-                    else if (p) {
-                        toolResult = await this.callTool(p.name, p.arguments || {})
-                    }
-                    else {
-                        throw new Error("Missing tool name in params")
-                    }
-                    return {
-                        jsonrpc: "2.0",
-                        id,
-                        result: toolResult
-                    }
-                }
-
-                case "prompts/list": {
-                    const prompts = await this.getAllPrompts()
-                    return {
-                        jsonrpc: "2.0",
-                        id,
-                        result: { prompts }
-                    }
-                }
-
-                case "prompts/get": {
-                    for (const conn of this.connections.values()) {
-                        const caps = conn.capabilities as Record<string, unknown> | undefined
-                        if (caps?.prompts) {
-                            try {
-                                const result = await conn.client.getPrompt(params as { name: string; arguments?: Record<string, string> })
-                                return { jsonrpc: "2.0", id, result }
-                            }
-                            catch {
-                                /* Try next server */
-                            }
-                        }
-                    }
-                    return {
-                        jsonrpc: "2.0",
-                        id,
-                        error: { code: -32602, message: `Prompt not found: ${(params as { name?: string })?.name}` }
-                    }
-                }
-
-                case "resources/list": {
-                    const resources = await this.getAllResources()
-                    return {
-                        jsonrpc: "2.0",
-                        id,
-                        result: { resources }
-                    }
-                }
-
-                case "resources/read": {
-                    for (const conn of this.connections.values()) {
-                        const caps = conn.capabilities as Record<string, unknown> | undefined
-                        if (caps?.resources) {
-                            try {
-                                const result = await conn.client.readResource(params as { uri: string })
-                                return { jsonrpc: "2.0", id, result }
-                            }
-                            catch {
-                                /* Try next server */
-                            }
-                        }
-                    }
-                    return {
-                        jsonrpc: "2.0",
-                        id,
-                        error: { code: -32602, message: `Resource not found: ${(params as { uri?: string })?.uri}` }
-                    }
-                }
-
-                case "ping":
-                    return {
-                        jsonrpc: "2.0",
-                        id,
-                        result: {}
-                    }
-
-                default:
-                    return {
-                        jsonrpc: "2.0",
-                        id,
-                        error: { code: -32601, message: `Method not found: ${method}` }
-                    }
-            }
-        }
-        catch (error) {
-            const msg = error instanceof Error ? error.message : String(error)
-            return {
-                jsonrpc: "2.0",
-                id,
-                error: { code: -32000, message: msg }
-            }
-        }
     }
 
     async refresh (): Promise<void> {
@@ -734,13 +1000,13 @@ class McpProxyService {
         return this.connections.has(serverId)
     }
 
-    async testConnection (serverConfig: { type: string; config: { url: string; headers?: Record<string, string> } }): Promise<{ success: boolean; serverInfo?: { name?: string; version?: string }; toolCount?: number; error?: string }> {
+    async testConnection (serverConfig: { type: string; config: Record<string, unknown> }): Promise<{ success: boolean; serverInfo?: { name?: string; version?: string }; toolCount?: number; error?: string }> {
         const { type, config } = serverConfig
-        let transport: SSEClientTransport | StreamableHTTPClientTransport | undefined
+        let transport: SSEClientTransport | StreamableHTTPClientTransport | StdioClientTransport | undefined
         let client: Client | undefined
 
         try {
-            const fakeServer = { type, config } as McpServerEntry
+            const fakeServer = { type, config } as unknown as McpServerEntry
             switch (type) {
                 case "sse":
                     transport = this.createSSETransport(fakeServer)
@@ -748,12 +1014,15 @@ class McpProxyService {
                 case "http":
                     transport = this.createHTTPTransport(fakeServer)
                     break
+                case "stdio":
+                    transport = this.createStdioTransport(fakeServer)
+                    break
                 default:
                     return { success: false, error: `Unknown server type: ${type}` }
             }
 
             client = new Client(
-                { name: "mcp-funnel-test", version: "1.0.0" },
+                { name: "mcp-funnel-test", version: VERSION },
                 { capabilities: {} }
             )
 
@@ -807,7 +1076,7 @@ class McpProxyService {
             }
             return {
                 success: false,
-                error: error instanceof Error ? error.message : String(error)
+                error: getErrorMessage(error)
             }
         }
     }
@@ -827,12 +1096,10 @@ class McpProxyService {
     getActiveToolCount (): number {
         let total = 0
         for (const [serverId, conn] of this.connections.entries()) {
-            const disabledTools = this.serverManager.getDisabledTools(serverId)
-            total += conn.tools.filter((t) => !disabledTools.includes(t.name)).length
+            total += this.getEnabledTools(serverId, conn.tools).length
         }
         return total
     }
 }
 
 export { McpProxyService }
-export type { JsonRpcRequest, JsonRpcResponse }

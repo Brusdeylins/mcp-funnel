@@ -1,11 +1,12 @@
-// MCP-Funnel — Multi-user MCP server management
-// Copyright (c) 2026 Matthias Brusdeylins
-// SPDX-License-Identifier: GPL-3.0-only
-// 100% AI-generated code (vibe-coding with Claude)
+/* MCP-Funnel — Multi-user MCP server management
+ * Copyright (c) 2026 Matthias Brusdeylins
+ * SPDX-License-Identifier: GPL-3.0-only
+ * 100% AI-generated code (vibe-coding with Claude) */
 
 import fs from "fs"
 import path from "path"
 import logger from "./mcp-funnel-log.js"
+import { getErrorMessage } from "./utils.js"
 
 interface UserStats {
     requests: number
@@ -46,7 +47,7 @@ class StatsManager {
             }
         }
         catch (err) {
-            logger.error(`Failed to load stats: ${err instanceof Error ? err.message : String(err)}`)
+            logger.error(`Failed to load stats: ${getErrorMessage(err)}`)
             this.data = { users: {} }
         }
     }
@@ -58,7 +59,7 @@ class StatsManager {
             this.dirty = false
         }
         catch (err) {
-            logger.error(`Failed to save stats: ${err instanceof Error ? err.message : String(err)}`)
+            logger.error(`Failed to save stats: ${getErrorMessage(err)}`)
         }
     }
 

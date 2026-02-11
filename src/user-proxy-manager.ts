@@ -1,11 +1,12 @@
-// MCP-Funnel — Multi-user MCP server management
-// Copyright (c) 2026 Matthias Brusdeylins
-// SPDX-License-Identifier: GPL-3.0-only
-// 100% AI-generated code (vibe-coding with Claude)
+/* MCP-Funnel — Multi-user MCP server management
+ * Copyright (c) 2026 Matthias Brusdeylins
+ * SPDX-License-Identifier: GPL-3.0-only
+ * 100% AI-generated code (vibe-coding with Claude) */
 
 import fs from "fs"
 import path from "path"
 import logger from "./mcp-funnel-log.js"
+import { getErrorMessage } from "./utils.js"
 import { McpServerManager } from "./mcp-server-manager.js"
 import { McpProxyService } from "./mcp-proxy-service.js"
 import { StatsManager } from "./mcp-funnel-stats.js"
@@ -16,8 +17,11 @@ interface UserEntry {
     lastAccess: number
 }
 
-const IDLE_CHECK_INTERVAL = 5 * 60 * 1000    /* 5 minutes  */
-const IDLE_TIMEOUT        = 30 * 60 * 1000   /* 30 minutes */
+/* 5 minutes */
+const IDLE_CHECK_INTERVAL = 5 * 60 * 1000
+
+/* 30 minutes */
+const IDLE_TIMEOUT        = 30 * 60 * 1000
 
 class UserProxyManager {
     private users: Map<string, UserEntry>
@@ -118,7 +122,7 @@ class UserProxyManager {
             }
         }
         catch (err) {
-            logger.error(`Failed to delete server config for ${userId}: ${err instanceof Error ? err.message : String(err)}`)
+            logger.error(`Failed to delete server config for ${userId}: ${getErrorMessage(err)}`)
         }
     }
 
@@ -133,7 +137,7 @@ class UserProxyManager {
                 await entry.proxy.shutdown()
             }
             catch (err) {
-                const msg = err instanceof Error ? err.message : String(err)
+                const msg = getErrorMessage(err)
                 logger.error(`Error shutting down proxy for ${userId}: ${msg}`)
             }
         }
@@ -146,7 +150,7 @@ class UserProxyManager {
             if (now - entry.lastAccess > IDLE_TIMEOUT) {
                 logger.info(`Shutting down idle MCP proxy for user: ${userId}`)
                 entry.proxy.shutdown().catch((err) => {
-                    const msg = err instanceof Error ? err.message : String(err)
+                    const msg = getErrorMessage(err)
                     logger.error(`Error shutting down idle proxy for ${userId}: ${msg}`)
                 })
                 this.users.delete(userId)

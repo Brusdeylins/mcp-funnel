@@ -1,7 +1,7 @@
-// MCP-Funnel — Multi-user MCP server management
-// Copyright (c) 2026 Matthias Brusdeylins
-// SPDX-License-Identifier: GPL-3.0-only
-// 100% AI-generated code (vibe-coding with Claude)
+/* MCP-Funnel — Multi-user MCP server management
+ * Copyright (c) 2026 Matthias Brusdeylins
+ * SPDX-License-Identifier: GPL-3.0-only
+ * 100% AI-generated code (vibe-coding with Claude) */
 
 import fs from "fs"
 import path from "path"
@@ -15,8 +15,8 @@ interface McpFunnelConfig {
     sessionMaxAge: number
     adminUser: string
     adminPass: string
-    logLevel: string
     nodeEnv: string
+    singleUser: boolean
 }
 
 function resolveSessionSecret (dataDir: string): string {
@@ -40,12 +40,12 @@ function resolveSessionSecret (dataDir: string): string {
     /* 3. Generate new secret and persist it */
     const generated = crypto.randomBytes(32).toString("hex")
     fs.mkdirSync(dataDir, { recursive: true })
-    fs.writeFileSync(secretFile, generated, "utf8")
+    fs.writeFileSync(secretFile, generated, { encoding: "utf8", mode: 0o600 })
     logger.info("Generated new session secret and saved to file")
     return generated
 }
 
-function loadConfig (cliPort?: number, cliDataDir?: string): McpFunnelConfig {
+function loadConfig (cliPort?: number, cliDataDir?: string, cliSingleUser?: boolean): McpFunnelConfig {
     const dataDir = cliDataDir
         || process.env["DATA_DIR"]
         || "./data"
@@ -62,8 +62,8 @@ function loadConfig (cliPort?: number, cliDataDir?: string): McpFunnelConfig {
         sessionMaxAge:  parseInt(process.env["SESSION_MAX_AGE"] || "2592000000", 10),
         adminUser:      process.env["ADMIN_USER"] || "",
         adminPass:      process.env["ADMIN_PASS"] || "",
-        logLevel:       process.env["LOG_LEVEL"] || "info",
         nodeEnv:        process.env["NODE_ENV"] || "production",
+        singleUser:     cliSingleUser || process.env["SINGLE_USER"] === "true"
     }
 
     return config

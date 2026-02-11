@@ -1,7 +1,7 @@
-// MCP-Funnel — Multi-user MCP server management
-// Copyright (c) 2026 Matthias Brusdeylins
-// SPDX-License-Identifier: GPL-3.0-only
-// 100% AI-generated code (vibe-coding with Claude)
+/* MCP-Funnel — Multi-user MCP server management
+ * Copyright (c) 2026 Matthias Brusdeylins
+ * SPDX-License-Identifier: GPL-3.0-only
+ * 100% AI-generated code (vibe-coding with Claude) */
 
 import bcrypt from "bcryptjs"
 import { v4 as uuidv4 } from "uuid"
@@ -28,6 +28,18 @@ interface UserInfo {
     lastLogin: string | null
 }
 
+function toUserInfo (u: UserData): UserInfo {
+    return {
+        id: u.id,
+        username: u.username,
+        apiKey: u.apiKey,
+        enabled: u.enabled,
+        createdAt: u.createdAt,
+        updatedAt: u.updatedAt,
+        lastLogin: u.lastLogin
+    }
+}
+
 class UserManager {
     private authManager: AuthManager
 
@@ -37,15 +49,7 @@ class UserManager {
 
     listUsers (): UserInfo[] {
         const authData = this.authManager.loadAuthData()
-        return authData.users.map((u) => ({
-            id: u.id,
-            username: u.username,
-            apiKey: u.apiKey,
-            enabled: u.enabled,
-            createdAt: u.createdAt,
-            updatedAt: u.updatedAt,
-            lastLogin: u.lastLogin
-        }))
+        return authData.users.map(toUserInfo)
     }
 
     async createUser (input: CreateUserInput): Promise<UserInfo> {
@@ -84,15 +88,7 @@ class UserManager {
         this.authManager.saveAuthData(authData)
         logger.info(`User created: ${input.username}`)
 
-        return {
-            id: newUser.id,
-            username: newUser.username,
-            apiKey: newUser.apiKey,
-            enabled: newUser.enabled,
-            createdAt: newUser.createdAt,
-            updatedAt: newUser.updatedAt,
-            lastLogin: newUser.lastLogin
-        }
+        return toUserInfo(newUser)
     }
 
     async updateUser (id: string, input: UpdateUserInput): Promise<UserInfo> {
@@ -118,15 +114,7 @@ class UserManager {
         this.authManager.saveAuthData(authData)
         logger.info(`User updated: ${user.username}`)
 
-        return {
-            id: user.id,
-            username: user.username,
-            apiKey: user.apiKey,
-            enabled: user.enabled,
-            createdAt: user.createdAt,
-            updatedAt: user.updatedAt,
-            lastLogin: user.lastLogin
-        }
+        return toUserInfo(user)
     }
 
     deleteUser (id: string): boolean {

@@ -1,7 +1,7 @@
-// MCP-Funnel — Multi-user MCP server management
-// Copyright (c) 2026 Matthias Brusdeylins
-// SPDX-License-Identifier: GPL-3.0-only
-// 100% AI-generated code (vibe-coding with Claude)
+/* MCP-Funnel — Multi-user MCP server management
+ * Copyright (c) 2026 Matthias Brusdeylins
+ * SPDX-License-Identifier: GPL-3.0-only
+ * 100% AI-generated code (vibe-coding with Claude) */
 
 import { generateLayout, generatePageHeader } from "./layout-template.js"
 
@@ -53,6 +53,7 @@ function renderMcpServersPage (role: "admin" | "user", username: string): string
                     <select id="serverType" class="form-select" onchange="updateConfigFields()">
                       <option value="http" selected>HTTP (Streamable)</option>
                       <option value="sse">SSE (Server-Sent Events)</option>
+                      <option value="stdio">Stdio (Local Process)</option>
                     </select>
                   </div>
                   <div class="col-md-5" id="configContainer">
@@ -62,7 +63,7 @@ function renderMcpServersPage (role: "admin" | "user", username: string): string
                 </div>
                 <div class="row mt-3">
                   <div class="col-12">
-                    <button class="btn btn-primary" onclick="addServer()">
+                    <button class="btn btn-outline-primary" onclick="addServer()">
                       <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
                         <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
                         <path d="M12 5l0 14" />
@@ -93,7 +94,7 @@ function renderMcpServersPage (role: "admin" | "user", username: string): string
                   Registered MCP Servers
                 </h3>
                 <div class="card-actions">
-                  <button class="btn btn-outline-primary" onclick="refreshAllServers()" id="refreshAllBtn">
+                  <button class="btn btn-outline-primary me-2" onclick="refreshAllServers()" id="refreshAllBtn">
                     <svg xmlns="http://www.w3.org/2000/svg" class="icon me-1" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
                       <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
                       <path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4" />
@@ -165,7 +166,7 @@ function renderMcpServersPage (role: "admin" | "user", username: string): string
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-            <button type="button" class="btn btn-primary" onclick="saveToolSettings()">
+            <button type="button" class="btn btn-outline-primary" onclick="saveToolSettings()">
               <svg xmlns="http://www.w3.org/2000/svg" class="icon me-1" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
                 <path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M5 12l5 5l10 -10" />
               </svg>
@@ -198,24 +199,44 @@ function renderMcpServersPage (role: "admin" | "user", username: string): string
       var container = document.getElementById('configContainer');
       var authContainer = document.getElementById('authContainer');
 
-      container.innerHTML =
-        '<label class="form-label">Server URL</label>' +
-        '<input type="url" id="configUrl" class="form-control" placeholder="https://mcp.example.com/mcp">' +
-        '<small class="form-hint">The MCP server endpoint URL</small>';
-      authContainer.innerHTML =
-        '<div class="col-md-4">' +
-        '  <label class="form-label">Authentication Type</label>' +
-        '  <select id="authType" class="form-select" onchange="updateAuthFields()">' +
-        '    <option value="none">None</option>' +
-        '    <option value="bearer">Bearer Token</option>' +
-        '    <option value="basic">Basic Auth</option>' +
-        '    <option value="apikey">API Key Header</option>' +
-        '    <option value="urlparam">URL Parameter</option>' +
-        '    <option value="custom">Custom Header</option>' +
-        '  </select>' +
-        '</div>' +
-        '<div class="col-md-8" id="authFieldsContainer"></div>';
-      updateAuthFields();
+      if (type === 'stdio') {
+        container.innerHTML =
+          '<label class="form-label">Command</label>' +
+          '<input type="text" id="stdioCommand" class="form-control" placeholder="e.g., npx or /usr/local/bin/mcp-server">' +
+          '<small class="form-hint">The command to spawn the MCP server process</small>';
+        authContainer.innerHTML =
+          '<div class="col-md-6">' +
+          '  <label class="form-label">Arguments (one per line)</label>' +
+          '  <textarea id="stdioArgs" class="form-control" rows="2" placeholder="-y\\n@anthropic-ai/mcp-server-memory"></textarea>' +
+          '</div>' +
+          '<div class="col-md-6">' +
+          '  <label class="form-label">Working Directory (optional)</label>' +
+          '  <input type="text" id="stdioCwd" class="form-control" placeholder="/path/to/working/dir">' +
+          '</div>' +
+          '<div class="col-12 mt-2">' +
+          '  <label class="form-label">Environment Variables (KEY=VALUE, one per line, optional)</label>' +
+          '  <textarea id="stdioEnv" class="form-control" rows="2" placeholder="NODE_ENV=production\\nDEBUG=true"></textarea>' +
+          '</div>';
+      } else {
+        container.innerHTML =
+          '<label class="form-label">Server URL</label>' +
+          '<input type="url" id="configUrl" class="form-control" placeholder="https://mcp.example.com/mcp">' +
+          '<small class="form-hint">The MCP server endpoint URL</small>';
+        authContainer.innerHTML =
+          '<div class="col-md-4">' +
+          '  <label class="form-label">Authentication Type</label>' +
+          '  <select id="authType" class="form-select" onchange="updateAuthFields()">' +
+          '    <option value="none">None</option>' +
+          '    <option value="bearer">Bearer Token</option>' +
+          '    <option value="basic">Basic Auth</option>' +
+          '    <option value="apikey">API Key Header</option>' +
+          '    <option value="urlparam">URL Parameter</option>' +
+          '    <option value="custom">Custom Header</option>' +
+          '  </select>' +
+          '</div>' +
+          '<div class="col-md-8" id="authFieldsContainer"></div>';
+        updateAuthFields();
+      }
     }
 
     function updateAuthFields() {
@@ -297,6 +318,38 @@ function renderMcpServersPage (role: "admin" | "user", username: string): string
     }
 
     function getConfigFromFields() {
+      var type = document.getElementById('serverType').value;
+
+      if (type === 'stdio') {
+        var command = document.getElementById('stdioCommand') ? document.getElementById('stdioCommand').value.trim() : '';
+        var argsText = document.getElementById('stdioArgs') ? document.getElementById('stdioArgs').value.trim() : '';
+        var cwd = document.getElementById('stdioCwd') ? document.getElementById('stdioCwd').value.trim() : '';
+        var envText = document.getElementById('stdioEnv') ? document.getElementById('stdioEnv').value.trim() : '';
+
+        var config = { command: command };
+        if (argsText) {
+          config.args = argsText.split('\\n').map(function(a) { return a.trim(); }).filter(function(a) { return a; });
+        }
+        if (cwd) {
+          config.cwd = cwd;
+        }
+        if (envText) {
+          var env = {};
+          envText.split('\\n').forEach(function(line) {
+            line = line.trim();
+            if (!line) return;
+            var eqIdx = line.indexOf('=');
+            if (eqIdx > 0) {
+              env[line.substring(0, eqIdx).trim()] = line.substring(eqIdx + 1).trim();
+            }
+          });
+          if (Object.keys(env).length > 0) {
+            config.env = env;
+          }
+        }
+        return config;
+      }
+
       var url = document.getElementById('configUrl').value;
       var authType = document.getElementById('authType') ? document.getElementById('authType').value : 'none';
 
@@ -309,12 +362,12 @@ function renderMcpServersPage (role: "admin" | "user", username: string): string
         }
       }
 
-      var config = { url: url };
+      var urlConfig = { url: url };
       var headers = getAuthHeaders();
       if (Object.keys(headers).length > 0) {
-        config.headers = headers;
+        urlConfig.headers = headers;
       }
-      return config;
+      return urlConfig;
     }
 
     async function loadServers() {
@@ -358,22 +411,20 @@ function renderMcpServersPage (role: "admin" | "user", username: string): string
           '<td><code class="text-muted">' + formatConfig(server.type, server.config) + '</code></td>' +
           '<td>' +
             '<div class="btn-list flex-nowrap">' +
-              '<button class="btn btn-sm btn-primary" onclick="refreshServer(\\'' + server.id + '\\')" title="Refresh" id="refresh-' + server.id + '">' +
-                '<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-sm me-1" width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4" /><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4" /></svg>' +
-                'Refresh</button>' +
-              '<button class="btn btn-sm ' + (server.enabled ? 'btn-warning' : 'btn-success') + '" onclick="toggleServer(\\'' + server.id + '\\')">' +
-                '<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-sm me-1" width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/>' +
-                (server.enabled
-                  ? '<path d="M7 6a7.75 7.75 0 1 0 10 0" /><path d="M12 4l0 8" />'
-                  : '<path d="M7 6a7.75 7.75 0 1 0 10 0" /><path d="M12 4l0 8" />') +
+              '<button class="btn btn-icon btn-outline-primary" onclick="refreshServer(\\'' + server.id + '\\')" title="Refresh" id="refresh-' + server.id + '">' +
+                '<svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4" /><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4" /></svg>' +
+              '</button>' +
+              '<button class="btn btn-icon btn-outline-teal" onclick="editServer(\\'' + server.id + '\\')" title="Manage Tools">' +
+                '<svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 10h3v-3l-3.5 -3.5a6 6 0 0 1 8 8l6 6a2 2 0 0 1 -3 3l-6 -6a6 6 0 0 1 -8 -8l3.5 3.5" /></svg>' +
+              '</button>' +
+              '<button class="btn btn-icon ' + (server.enabled ? 'btn-outline-warning' : 'btn-outline-success') + '" onclick="toggleServer(\\'' + server.id + '\\')" title="' + (server.enabled ? 'Disable' : 'Enable') + '">' +
+                '<svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/>' +
+                '<path d="M7 6a7.75 7.75 0 1 0 10 0" /><path d="M12 4l0 8" />' +
                 '</svg>' +
-                (server.enabled ? 'Disable' : 'Enable') + '</button>' +
-              '<button class="btn btn-sm btn-primary" onclick="editServer(\\'' + server.id + '\\')" title="Manage Tools">' +
-                '<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-sm me-1" width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 10h3v-3l-3.5 -3.5a6 6 0 0 1 8 8l6 6a2 2 0 0 1 -3 3l-6 -6a6 6 0 0 1 -8 -8l3.5 3.5" /></svg>' +
-                'Tools</button>' +
-              '<button class="btn btn-sm btn-danger" onclick="deleteServer(\\'' + server.id + '\\', \\'' + escapeHtml(server.name) + '\\')">' +
-                '<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-sm me-1" width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M4 7l16 0" /><path d="M10 11l0 6" /><path d="M14 11l0 6" /><path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12" /><path d="M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3" /></svg>' +
-                'Delete</button>' +
+              '</button>' +
+              '<button class="btn btn-icon btn-outline-danger" onclick="deleteServer(\\'' + server.id + '\\', \\'' + escapeHtml(server.name) + '\\')" title="Delete">' +
+                '<svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M4 7l16 0" /><path d="M10 11l0 6" /><path d="M14 11l0 6" /><path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12" /><path d="M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3" /></svg>' +
+              '</button>' +
             '</div>' +
           '</td>' +
         '</tr>';
@@ -386,6 +437,11 @@ function renderMcpServersPage (role: "admin" | "user", username: string): string
     }
 
     function formatConfig(type, config) {
+      if (type === 'stdio') {
+        var cmd = config.command || '-';
+        var args = config.args ? config.args.join(' ') : '';
+        return cmd + (args ? ' ' + args : '');
+      }
       var url = config.url || '-';
       if (url.includes('?')) {
         var parts = url.split('?');
@@ -425,6 +481,7 @@ function renderMcpServersPage (role: "admin" | "user", username: string): string
     }
 
     function getAuthType(server) {
+      if (server.type === 'stdio') return 'Local';
       var url = server.config ? server.config.url || '' : '';
       if (url.includes('?') && url.includes('=')) return 'URL Param';
       var headers = server.config ? server.config.headers : null;
@@ -447,6 +504,18 @@ function renderMcpServersPage (role: "admin" | "user", username: string): string
       if (!name) {
         showNotification('Please enter a server name', 'warning');
         return;
+      }
+
+      if (type === 'stdio') {
+        if (!config.command) {
+          showNotification('Please enter a command for the stdio server', 'warning');
+          return;
+        }
+      } else {
+        if (!config.url) {
+          showNotification('Please enter a server URL', 'warning');
+          return;
+        }
       }
 
       var addBtn = document.querySelector('button[onclick="addServer()"]');
@@ -672,7 +741,9 @@ function renderMcpServersPage (role: "admin" | "user", username: string): string
       notification.className = 'alert alert-' + type + ' alert-dismissible';
       textElement.textContent = message;
       notification.classList.remove('d-none');
-      setTimeout(function() { notification.classList.add('d-none'); }, 5000);
+      notification.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      var delay = (type === 'danger' || type === 'warning') ? 8000 : 5000;
+      setTimeout(function() { notification.classList.add('d-none'); }, delay);
     }
 
     function escapeHtml(str) {
