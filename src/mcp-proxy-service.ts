@@ -161,6 +161,31 @@ class McpProxyService {
         return { server, transport }
     }
 
+    private async createEphemeralSession (): Promise<{ server: Server; transport: StreamableHTTPServerTransport }> {
+        const server = new Server(
+            { name: "mcp-funnel", version: VERSION },
+            {
+                capabilities: {
+                    tools: { listChanged: true },
+                    prompts: { listChanged: true },
+                    resources: { subscribe: true, listChanged: true },
+                    logging: {},
+                    completions: {}
+                }
+            }
+        )
+
+        this.registerInboundHandlers(server)
+
+        const transport = new StreamableHTTPServerTransport({
+            sessionIdGenerator: undefined,
+            enableJsonResponse: true
+        })
+
+        await server.connect(transport)
+        return { server, transport }
+    }
+
     private registerInboundHandlers (server: Server): void {
         /* tools/list */
         server.setRequestHandler(ListToolsRequestSchema, async () => {
@@ -339,13 +364,30 @@ class McpProxyService {
             }
         }
 
-        /* No valid session */
-        res.writeHead(400, { "Content-Type": "application/json" })
-        res.end(JSON.stringify({
-            jsonrpc: "2.0",
-            error: { code: -32000, message: "Bad Request: Server not initialized" },
-            id: null
-        }))
+        /* Stale session → ephemeral stateless fallback */
+        logger.info(`[${this.userId}] Stale session ${sessionId || "(none)"}, using ephemeral fallback`)
+        try {
+            const { server, transport } = await this.createEphemeralSession()
+            try {
+                await transport.handleRequest(req, res, body)
+            }
+            finally {
+                await transport.close().catch(() => {})
+                await server.close().catch(() => {})
+            }
+        }
+        catch (err) {
+            const msg = getErrorMessage(err)
+            logger.error(`[${this.userId}] Ephemeral fallback failed: ${msg}`)
+            if (!res.headersSent) {
+                res.writeHead(500, { "Content-Type": "application/json" })
+                res.end(JSON.stringify({
+                    jsonrpc: "2.0",
+                    error: { code: -32000, message: "Internal error: ephemeral fallback failed" },
+                    id: null
+                }))
+            }
+        }
     }
 
     private isInitializeRequest (body: unknown): boolean {
