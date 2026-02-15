@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.1.2 (2026-02-15)
+
+### Bug Fix
+- Extend `isSessionError()` to recognize HTTP transport failures (404, 502, ECONNREFUSED, ECONNRESET, ENOTFOUND, fetch errors) as reconnectable errors
+- Previously, when a backend MCP server was restarted behind a reverse proxy, the funnel would not attempt reconnection because the HTTP error didn't match session-related patterns
+- Tool calls now automatically trigger `reconnectServer()` on transport-level failures instead of propagating the raw error
+
+## 1.1.1 (2026-02-14)
+
+### Bug Fix
+- Fix stale session recovery after mcp-funnel restart — ephemeral fallback for requests with expired session IDs
+
 ## 1.1.0 (2026-02-10)
 
 ### MCP Protocol

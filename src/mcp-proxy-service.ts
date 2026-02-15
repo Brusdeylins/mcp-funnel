@@ -775,6 +775,12 @@ class McpProxyService {
                || msg.includes("connection closed")
                || msg.includes("stream disconnected")
                || msg.includes("terminated")
+               || msg.includes("streamable http error")
+               || msg.includes("error posting to endpoint")
+               || msg.includes("econnrefused")
+               || msg.includes("econnreset")
+               || msg.includes("enotfound")
+               || msg.includes("fetch failed")
     }
 
     private scheduleReconnect (serverId: string): void {

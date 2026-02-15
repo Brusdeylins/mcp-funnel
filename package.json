@@ -1,6 +1,6 @@
 {
   "name": "mcp-funnel",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Multi-user MCP server management tool - funnels multiple MCP servers into a single endpoint per user",
   "main": "dst/mcp-funnel.js",
   "bin": {
