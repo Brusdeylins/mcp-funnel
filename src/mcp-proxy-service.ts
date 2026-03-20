@@ -14,10 +14,20 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import {
     ListToolsRequestSchema, CallToolRequestSchema,
     ListPromptsRequestSchema, GetPromptRequestSchema,
-    ListResourcesRequestSchema, ReadResourceRequestSchema,
+    ListResourcesRequestSchema, ListResourceTemplatesRequestSchema, ReadResourceRequestSchema,
     SubscribeRequestSchema, UnsubscribeRequestSchema,
     CompleteRequestSchema, SetLevelRequestSchema,
-    ResourceUpdatedNotificationSchema, LoggingMessageNotificationSchema
+    ResourceUpdatedNotificationSchema, LoggingMessageNotificationSchema,
+    ToolListChangedNotificationSchema, PromptListChangedNotificationSchema,
+    ResourceListChangedNotificationSchema, ProgressNotificationSchema,
+    CancelledNotificationSchema, ListRootsRequestSchema,
+    RootsListChangedNotificationSchema, CreateMessageRequestSchema,
+    ElicitRequestSchema,
+    GetTaskRequestSchema, GetTaskResultSchema,
+    GetTaskPayloadRequestSchema, GetTaskPayloadResultSchema,
+    ListTasksRequestSchema, ListTasksResultSchema,
+    CancelTaskRequestSchema, CancelTaskResultSchema,
+    TaskStatusNotificationSchema
 } from "@modelcontextprotocol/sdk/types.js"
 import logger from "./mcp-funnel-log.js"
 import { VERSION, getErrorMessage } from "./utils.js"
@@ -33,6 +43,14 @@ interface ServerConnection {
     serverInfo: { name?: string; version?: string } | undefined
     capabilities: Record<string, unknown> | undefined
     pingInterval: ReturnType<typeof setInterval> | null
+}
+
+interface InboundSessionEntry {
+    server: Server
+    transport: StreamableHTTPServerTransport
+    createdAt: number
+    lastActivity: number
+    clientCapabilities?: Record<string, unknown>
 }
 
 interface ReconnectState {
@@ -54,6 +72,18 @@ const LOG_LEVEL_SEVERITY: Record<string, number> = {
     emergency: 7
 }
 
+function paginate<T> (items: T[], cursor?: string, pageSize = 100): { items: T[]; nextCursor?: string } {
+    let startIndex = 0
+    if (cursor) {
+        startIndex = parseInt(cursor, 10)
+        if (isNaN(startIndex) || startIndex < 0) startIndex = 0
+    }
+    const endIndex = startIndex + pageSize
+    const paginatedItems = items.slice(startIndex, endIndex)
+    const nextCursor = endIndex < items.length ? String(endIndex) : undefined
+    return { items: paginatedItems, nextCursor }
+}
+
 class McpProxyService {
     private connections: Map<string, ServerConnection>
     private reconnectState: Map<string, ReconnectState>
@@ -61,12 +91,15 @@ class McpProxyService {
     private userId: string
 
     /* Inbound SDK Server + transport (multi-session) */
-    private inboundSessions = new Map<string, { server: Server; transport: StreamableHTTPServerTransport; createdAt: number; lastActivity: number }>()
+    private inboundSessions = new Map<string, InboundSessionEntry>()
     private subscribedResources = new Set<string>()
 
     /* uri → serverId */
     private resourceOwners = new Map<string, string>()
     private logLevel = "warning"
+
+    /* taskId → { serverId, backendTaskId } */
+    private taskMapping = new Map<string, { serverId: string; backendTaskId: string }>()
     private sessionCleanupTimer: ReturnType<typeof setInterval> | null = null
 
     private readonly PING_INTERVAL = 30000
@@ -157,6 +190,16 @@ class McpProxyService {
                 this.subscribedResources.clear()
         }
 
+        server.oninitialized = () => {
+            const sessionId = transport.sessionId
+            if (sessionId) {
+                const session = this.inboundSessions.get(sessionId)
+                if (session) {
+                    session.clientCapabilities = server.getClientCapabilities() as Record<string, unknown> | undefined
+                }
+            }
+        }
+
         await server.connect(transport)
         return { server, transport }
     }
@@ -186,25 +229,52 @@ class McpProxyService {
         return { server, transport }
     }
 
+    private findSessionWithCapability (cap: string): InboundSessionEntry | undefined {
+        let best: InboundSessionEntry | undefined
+        for (const session of this.inboundSessions.values()) {
+            if (session.clientCapabilities?.[cap]) {
+                if (!best || session.lastActivity > best.lastActivity) {
+                    best = session
+                }
+            }
+        }
+        return best
+    }
+
+    private findConnectionByClient (client: Client): { serverId: string; serverName: string; conn: ServerConnection } | undefined {
+        for (const [serverId, conn] of this.connections.entries()) {
+            if (conn.client === client) {
+                return { serverId, serverName: conn.serverInfo?.name || serverId, conn }
+            }
+        }
+        return undefined
+    }
+
     private registerInboundHandlers (server: Server): void {
         /* tools/list */
-        server.setRequestHandler(ListToolsRequestSchema, async () => {
-            return { tools: this.getExposedTools() }
+        server.setRequestHandler(ListToolsRequestSchema, async (request) => {
+            const allTools = this.getExposedTools()
+            const { items, nextCursor } = paginate(allTools, request.params?.cursor)
+            return { tools: items, nextCursor }
         })
 
         /* tools/call */
         server.setRequestHandler(CallToolRequestSchema, async (request) => {
             const { name, arguments: args } = request.params
+            const taskMeta = (request.params as Record<string, unknown>)?.task
             if (isMetaTool(name)) {
-                return await this.handleMetaToolCall(name, args || {}) as { content: Array<{ type: string; text?: string }> }
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                return await this.handleMetaToolCall(name, args || {}) as any
             }
-            return await this.callTool(name, args || {}) as { content: Array<{ type: string; text?: string }> }
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            return await this.callTool(name, args || {}, true, taskMeta as Record<string, unknown> | undefined) as any
         })
 
         /* prompts/list */
-        server.setRequestHandler(ListPromptsRequestSchema, async () => {
-            const prompts = await this.getAllPrompts()
-            return { prompts: prompts as Array<{ name: string; description?: string; arguments?: Array<{ name: string; description?: string; required?: boolean }> }> }
+        server.setRequestHandler(ListPromptsRequestSchema, async (request) => {
+            const allPrompts = await this.getAllPrompts()
+            const { items, nextCursor } = paginate(allPrompts, request.params?.cursor)
+            return { prompts: items, nextCursor }
         })
 
         /* prompts/get */
@@ -225,9 +295,17 @@ class McpProxyService {
         })
 
         /* resources/list */
-        server.setRequestHandler(ListResourcesRequestSchema, async () => {
-            const resources = await this.getAllResources()
-            return { resources: resources as Array<{ uri: string; name: string; description?: string; mimeType?: string }> }
+        server.setRequestHandler(ListResourcesRequestSchema, async (request) => {
+            const allResources = await this.getAllResources()
+            const { items, nextCursor } = paginate(allResources, request.params?.cursor)
+            return { resources: items, nextCursor }
+        })
+
+        /* resources/templates/list */
+        server.setRequestHandler(ListResourceTemplatesRequestSchema, async (request) => {
+            const allTemplates = await this.getAllResourceTemplates()
+            const { items, nextCursor } = paginate(allTemplates, request.params?.cursor)
+            return { resourceTemplates: items, nextCursor }
         })
 
         /* resources/read */
@@ -306,7 +384,7 @@ class McpProxyService {
 
         /* completion/complete */
         server.setRequestHandler(CompleteRequestSchema, async (request) => {
-            const { ref, argument } = request.params
+            const { ref, argument, context } = request.params
 
             /* Find the backend server that owns the prompt/resource referenced */
             for (const conn of this.connections.values()) {
@@ -315,7 +393,7 @@ class McpProxyService {
 
                 if (refType === "ref/prompt" && caps?.prompts) {
                     try {
-                        return await conn.client.complete({ ref, argument })
+                        return await conn.client.complete({ ref, argument, context })
                     }
                     catch {
                         /* Try next server */
@@ -323,7 +401,7 @@ class McpProxyService {
                 }
                 else if (refType === "ref/resource" && caps?.resources) {
                     try {
-                        return await conn.client.complete({ ref, argument })
+                        return await conn.client.complete({ ref, argument, context })
                     }
                     catch {
                         /* Try next server */
@@ -339,7 +417,71 @@ class McpProxyService {
         server.setRequestHandler(SetLevelRequestSchema, async (request) => {
             this.logLevel = request.params.level
             logger.info(`[${this.userId}] MCP log level set to: ${this.logLevel}`)
+            for (const conn of this.connections.values()) {
+                try { await conn.client.setLoggingLevel(request.params.level) }
+                catch { /* ignore - backend may not support logging */ }
+            }
             return {}
+        })
+
+        /* Experimental task handlers — proxy to correct backend via taskMapping */
+        const proxyTaskToBackend = async (taskId: string, method: string, resultSchema: unknown) => {
+            const mapping = this.taskMapping.get(taskId)
+            if (!mapping) throw new Error(`Task not found: ${taskId}`)
+            const conn = this.connections.get(mapping.serverId)
+            if (!conn) throw new Error(`Backend not connected for task: ${taskId}`)
+            return await conn.client.request(
+                { method, params: { taskId: mapping.backendTaskId } },
+                resultSchema as Parameters<Client["request"]>[1]
+            )
+        }
+
+        try { server.setRequestHandler(GetTaskRequestSchema, async (r) => proxyTaskToBackend(r.params.taskId, "tasks/get", GetTaskResultSchema)) }
+        catch { /* Schema may not be available */ }
+        try { server.setRequestHandler(CancelTaskRequestSchema, async (r) => proxyTaskToBackend(r.params.taskId, "tasks/cancel", CancelTaskResultSchema)) }
+        catch { /* Schema may not be available */ }
+        try { server.setRequestHandler(GetTaskPayloadRequestSchema, async (r) => proxyTaskToBackend(r.params.taskId, "tasks/result", GetTaskPayloadResultSchema)) }
+        catch { /* Schema may not be available */ }
+
+        /* tasks/list — aggregate from all backends */
+        try {
+            server.setRequestHandler(ListTasksRequestSchema, async () => {
+                const allTasks: unknown[] = []
+                for (const conn of this.connections.values()) {
+                    try {
+                        const result = await conn.client.request(
+                            { method: "tasks/list", params: {} },
+                            ListTasksResultSchema
+                        )
+                        const taskResult = result as Record<string, unknown>
+                        if (taskResult && Array.isArray(taskResult.tasks)) {
+                            allTasks.push(...(taskResult.tasks as unknown[]))
+                        }
+                    }
+                    catch { /* Backend may not support tasks */ }
+                }
+                return { tasks: allTasks }
+            })
+        }
+        catch { /* Schema may not be available */ }
+
+        /* Forward cancellation to all backends */
+        server.setNotificationHandler(CancelledNotificationSchema, async (notification) => {
+            for (const conn of this.connections.values()) {
+                try {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    await (conn.client as any).notification({ method: "notifications/cancelled", params: notification.params })
+                }
+                catch { /* ignore */ }
+            }
+        })
+
+        /* Forward roots/list_changed to backends */
+        server.setNotificationHandler(RootsListChangedNotificationSchema, async () => {
+            for (const conn of this.connections.values()) {
+                try { await conn.client.sendRootsListChanged() }
+                catch { /* ignore */ }
+            }
         })
     }
 
@@ -362,10 +504,19 @@ class McpProxyService {
                 await session.transport.handleRequest(req, res, body)
                 return
             }
+
+            /* Known session ID but session not found → 404 per MCP spec */
+            res.writeHead(404, { "Content-Type": "application/json" })
+            res.end(JSON.stringify({
+                jsonrpc: "2.0",
+                error: { code: -32000, message: "Session not found. Please start a new session with an initialize request." },
+                id: null
+            }))
+            return
         }
 
-        /* Stale session → ephemeral stateless fallback */
-        logger.info(`[${this.userId}] Stale session ${sessionId || "(none)"}, using ephemeral fallback`)
+        /* No session ID and not initialize → ephemeral stateless fallback */
+        logger.info(`[${this.userId}] No session ID, using ephemeral fallback`)
         try {
             const { server, transport } = await this.createEphemeralSession()
             try {
@@ -479,7 +630,13 @@ class McpProxyService {
 
         const client = new Client(
             { name: "mcp-funnel", version: VERSION },
-            { capabilities: {} }
+            {
+                capabilities: {
+                    sampling: {},
+                    elicitation: {},
+                    roots: { listChanged: true }
+                }
+            }
         )
 
         transport.onerror = (error: Error) => {
@@ -601,6 +758,80 @@ class McpProxyService {
                 }
             }
         })
+
+        /* Backend tools/prompts/resources list_changed → refresh and forward */
+        client.setNotificationHandler(ToolListChangedNotificationSchema, async () => {
+            const found = this.findConnectionByClient(client)
+            if (found) {
+                try {
+                    const toolsResult = await client.listTools()
+                    found.conn.tools = (toolsResult.tools || []).map((tool) => ({
+                        ...tool,
+                        description: tool.description || "",
+                        _serverId: found.serverId,
+                        _serverName: found.serverName
+                    }))
+                }
+                catch (e) {
+                    logger.warn(`[${this.userId}] Failed to refresh tools: ${getErrorMessage(e)}`)
+                }
+            }
+            await this.notifyInboundSessions((s) => s.sendToolListChanged(), "backend tools changed")
+        })
+
+        client.setNotificationHandler(PromptListChangedNotificationSchema, async () => {
+            await this.notifyInboundSessions((s) => s.sendPromptListChanged(), "backend prompts changed")
+        })
+
+        client.setNotificationHandler(ResourceListChangedNotificationSchema, async () => {
+            await this.notifyInboundSessions((s) => s.sendResourceListChanged(), "backend resources changed")
+        })
+
+        /* Forward progress notifications */
+        client.setNotificationHandler(ProgressNotificationSchema, async (notification) => {
+            for (const { server } of this.inboundSessions.values()) {
+                try {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    await (server as any).notification({ method: "notifications/progress", params: notification.params })
+                }
+                catch { /* ignore */ }
+            }
+        })
+
+        /* Roots: forward list request from backend to inbound client */
+        client.setRequestHandler(ListRootsRequestSchema, async () => {
+            const session = this.findSessionWithCapability("roots")
+            if (!session) throw new Error("No client supports roots")
+            return await session.server.listRoots()
+        })
+
+        /* Sampling passthrough: backend → inbound client */
+        client.setRequestHandler(CreateMessageRequestSchema, async (request) => {
+            const session = this.findSessionWithCapability("sampling")
+            if (!session) throw new Error("No client supports sampling")
+            return await session.server.createMessage(request.params)
+        })
+
+        /* Elicitation passthrough: backend → inbound client */
+        client.setRequestHandler(ElicitRequestSchema, async (request) => {
+            const session = this.findSessionWithCapability("elicitation")
+            if (!session) throw new Error("No client supports elicitation")
+            return await session.server.elicitInput(request.params)
+        })
+
+        /* Forward task status notifications from backends to all inbound sessions (experimental) */
+        try {
+            client.setNotificationHandler(TaskStatusNotificationSchema, async (notification) => {
+                for (const { server } of this.inboundSessions.values()) {
+                    try {
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        await (server as any).notification({ method: "notifications/tasks/status", params: notification.params })
+                    }
+                    catch { /* ignore */ }
+                }
+            })
+        }
+        catch { /* TaskStatusNotificationSchema may not be available */ }
     }
 
     private createSSETransport (server: McpServerEntry): SSEClientTransport {
@@ -674,8 +905,13 @@ class McpProxyService {
         }
         return {
             name: tool.name,
+            title: tool.title,
             description: tool.description,
             inputSchema: tool.inputSchema,
+            outputSchema: tool.outputSchema,
+            annotations: tool.annotations,
+            icons: tool.icons,
+            execution: tool.execution,
             server: tool._serverName
         }
     }
@@ -850,6 +1086,12 @@ class McpProxyService {
                 this.resourceOwners.delete(uri)
         }
 
+        /* Clean up task mappings for this server */
+        for (const [taskId, mapping] of this.taskMapping.entries()) {
+            if (mapping.serverId === serverId)
+                this.taskMapping.delete(taskId)
+        }
+
         if (conn.pingInterval) {
             clearInterval(conn.pingInterval)
             conn.pingInterval = null
@@ -894,7 +1136,7 @@ class McpProxyService {
         await this.closeConnection(serverId)
     }
 
-    async callTool (toolName: string, args: Record<string, unknown>, retryOnSessionError = true): Promise<unknown> {
+    async callTool (toolName: string, args: Record<string, unknown>, retryOnSessionError = true, taskMeta?: Record<string, unknown>): Promise<unknown> {
         let found = this.findToolServer(toolName)
 
         if (!found) {
@@ -907,11 +1149,26 @@ class McpProxyService {
         const { client, serverId } = found
 
         try {
-            const result = await client.callTool({
+            const callParams: Record<string, unknown> = {
                 name: toolName,
                 arguments: args
-            })
-            return result as { content: Array<{ type: string; text?: string; [key: string]: unknown }> }
+            }
+            if (taskMeta) {
+                callParams.task = taskMeta
+            }
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const result = await client.callTool(callParams as any)
+
+            /* If backend returned a CreateTaskResult, map the task ID */
+            if (result && typeof result === "object" && "task" in result) {
+                const task = (result as Record<string, unknown>).task as Record<string, unknown> | undefined
+                if (task?.taskId) {
+                    this.taskMapping.set(String(task.taskId), { serverId, backendTaskId: String(task.taskId) })
+                    logger.debug(`[${this.userId}] Task created for ${toolName}: ${task.taskId}`)
+                }
+            }
+
+            return result
         }
         catch (error) {
             const msg = getErrorMessage(error)
@@ -921,7 +1178,7 @@ class McpProxyService {
                 logger.info(`[${this.userId}] Session error detected, attempting reconnection for tool: ${toolName}`)
                 try {
                     await this.reconnectServer(serverId)
-                    return await this.callTool(toolName, args, false)
+                    return await this.callTool(toolName, args, false, taskMeta)
                 }
                 catch (reconnectError) {
                     const rmsg = getErrorMessage(reconnectError)
@@ -981,6 +1238,24 @@ class McpProxyService {
             }
         }
         return allResources
+    }
+
+    private async getAllResourceTemplates (): Promise<unknown[]> {
+        const allTemplates: unknown[] = []
+        for (const conn of this.connections.values()) {
+            const caps = conn.capabilities as Record<string, unknown> | undefined
+            if (caps?.resources) {
+                try {
+                    const result = await conn.client.listResourceTemplates()
+                    allTemplates.push(...(result.resourceTemplates || []))
+                }
+                catch (e) {
+                    const msg = getErrorMessage(e)
+                    logger.warn(`[${this.userId}] Failed to list resource templates from ${conn.serverInfo?.name}: ${msg}`)
+                }
+            }
+        }
+        return allTemplates
     }
 
     async refresh (): Promise<void> {
@@ -1071,7 +1346,13 @@ class McpProxyService {
 
             client = new Client(
                 { name: "mcp-funnel-test", version: VERSION },
-                { capabilities: {} }
+                {
+                    capabilities: {
+                        sampling: {},
+                        elicitation: {},
+                        roots: { listChanged: true }
+                    }
+                }
             )
 
             const connectPromise = client.connect(transport)

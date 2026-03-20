@@ -18,6 +18,7 @@ function createApiKeyAuth (authManager: AuthManager, statsManager: StatsManager)
         const authHeader = req.headers.authorization
         if (!authHeader) {
             logger.warn(`API request without Authorization header: ${req.method} ${req.path}`)
+            res.set("WWW-Authenticate", "Bearer")
             res.status(401).json({
                 error: "Missing Authorization header",
                 message: "API key required. Format: Authorization: Bearer <your-api-key>"
@@ -27,6 +28,7 @@ function createApiKeyAuth (authManager: AuthManager, statsManager: StatsManager)
 
         if (!authHeader.startsWith("Bearer ")) {
             logger.warn(`Invalid Authorization format: ${req.method} ${req.path}`)
+            res.set("WWW-Authenticate", "Bearer")
             res.status(401).json({
                 error: "Invalid Authorization format",
                 message: "Expected format: Authorization: Bearer <your-api-key>"
@@ -39,6 +41,7 @@ function createApiKeyAuth (authManager: AuthManager, statsManager: StatsManager)
         const result = authManager.validateApiKey(token)
         if (!result) {
             logger.warn(`Invalid API key attempt: ${req.method} ${req.path}`)
+            res.set("WWW-Authenticate", "Bearer")
             res.status(401).json({
                 error: "Invalid API key",
                 message: "The provided API key is not valid"

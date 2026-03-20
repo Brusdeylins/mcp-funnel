@@ -65,7 +65,10 @@ describe("single-user mode", () => {
             adminPass: "",
 
             nodeEnv: "test",
-            singleUser: true
+            singleUser: true,
+            authMode: "both",
+            allowedOrigins: [],
+            mcpProtocolVersions: ["2025-11-25", "2025-03-26"]
         }
         const result = createApp(config)
         statsManager = result.statsManager
@@ -347,22 +350,16 @@ describe("single-user mode", () => {
         assert.ok(data.result !== undefined)
     })
 
-    it("stale session ID falls back to ephemeral session and succeeds", async () => {
+    it("stale session ID returns 404 per MCP spec", async () => {
         const res = await request(`${baseUrl}/mcp`, {
             method: "POST",
             body: { jsonrpc: "2.0", id: 99, method: "tools/list" },
             headers: { Accept: MCP_ACCEPT, "Mcp-Session-Id": "stale-nonexistent-session-id" }
         })
-        assert.equal(res.status, 200)
+        assert.equal(res.status, 404)
         const data = JSON.parse(res.body)
         assert.equal(data.jsonrpc, "2.0")
-        assert.equal(data.id, 99)
-        assert.ok(data.result)
-        assert.ok(Array.isArray(data.result.tools))
-        const toolNames = data.result.tools.map((t: { name: string }) => t.name)
-        assert.ok(toolNames.includes("mcp_discover_tools"))
-        assert.ok(toolNames.includes("mcp_get_tool_schema"))
-        assert.ok(toolNames.includes("mcp_call_tool"))
+        assert.ok(data.error)
     })
 
     it("initialize reports listChanged: true", async () => {

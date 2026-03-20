@@ -9,10 +9,12 @@ import { UserProxyManager } from "../user-proxy-manager.js"
 import { AuthManager } from "../mcp-funnel-auth.js"
 import { StatsManager } from "../mcp-funnel-stats.js"
 import { createApiKeyAuth } from "../middleware/api-key-auth.js"
+import { createMcpAuth } from "../middleware/mcp-auth.js"
+import { OAuthConfig } from "../oauth/oauth-config.js"
 import logger from "../mcp-funnel-log.js"
 import { getErrorMessage } from "../utils.js"
 
-function createMcpProxyRoutes (userProxyManager: UserProxyManager, authManager: AuthManager, statsManager: StatsManager, singleUser = false): Router {
+function createMcpProxyRoutes (userProxyManager: UserProxyManager, authManager: AuthManager, statsManager: StatsManager, singleUser = false, oauthConfig?: OAuthConfig): Router {
     const router = Router()
     const { requireApiKey } = createApiKeyAuth(authManager, statsManager)
 
@@ -21,7 +23,16 @@ function createMcpProxyRoutes (userProxyManager: UserProxyManager, authManager: 
         next()
     }
 
-    const authMiddleware = singleUser ? singleUserBypass : requireApiKey
+    let authMiddleware: (req: Request, res: Response, next: NextFunction) => void
+    if (singleUser) {
+        authMiddleware = singleUserBypass
+    }
+    else if (oauthConfig) {
+        authMiddleware = createMcpAuth(authManager, statsManager, oauthConfig)
+    }
+    else {
+        authMiddleware = requireApiKey
+    }
 
     /* Delegate all MCP protocol requests to the SDK transport */
     async function handleMcpRequest (req: Request, res: Response): Promise<void> {

@@ -74,7 +74,10 @@ describe("multi-user mode — before admin setup", () => {
             adminPass: "",
 
             nodeEnv: "test",
-            singleUser: false
+            singleUser: false,
+            authMode: "both",
+            allowedOrigins: [],
+            mcpProtocolVersions: ["2025-11-25", "2025-03-26"]
         }
         const result = createApp(config)
         statsManager = result.statsManager
@@ -172,7 +175,10 @@ describe("multi-user mode — auth required", () => {
             adminPass: "",
 
             nodeEnv: "test",
-            singleUser: false
+            singleUser: false,
+            authMode: "both",
+            allowedOrigins: [],
+            mcpProtocolVersions: ["2025-11-25", "2025-03-26"]
         }
         const result = createApp(config)
         statsManager = result.statsManager

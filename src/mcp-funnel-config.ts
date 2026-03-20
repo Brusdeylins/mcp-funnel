@@ -17,6 +17,9 @@ interface McpFunnelConfig {
     adminPass: string
     nodeEnv: string
     singleUser: boolean
+    authMode: "both" | "oauth" | "legacy"
+    allowedOrigins: string[]
+    mcpProtocolVersions: string[]
 }
 
 function resolveSessionSecret (dataDir: string): string {
@@ -63,7 +66,10 @@ function loadConfig (cliPort?: number, cliDataDir?: string, cliSingleUser?: bool
         adminUser:      process.env["ADMIN_USER"] || "",
         adminPass:      process.env["ADMIN_PASS"] || "",
         nodeEnv:        process.env["NODE_ENV"] || "production",
-        singleUser:     cliSingleUser || process.env["SINGLE_USER"] === "true"
+        singleUser:     cliSingleUser || process.env["SINGLE_USER"] === "true",
+        authMode:       (process.env["AUTH_MODE"] as "both" | "oauth" | "legacy") || "both",
+        allowedOrigins: (process.env["ALLOWED_ORIGINS"] || "").split(",").filter(Boolean),
+        mcpProtocolVersions: (process.env["MCP_PROTOCOL_VERSIONS"] || "2025-11-25,2025-03-26").split(",").filter(Boolean),
     }
 
     return config

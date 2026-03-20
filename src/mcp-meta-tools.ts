@@ -9,6 +9,11 @@ interface ToolWithServer {
     name: string
     description: string
     inputSchema: unknown
+    title?: string
+    icons?: unknown[]
+    annotations?: Record<string, unknown>
+    outputSchema?: unknown
+    execution?: Record<string, unknown>
     _serverId: string
     _serverName: string
     [key: string]: unknown

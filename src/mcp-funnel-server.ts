@@ -24,6 +24,10 @@ import { UserProxyManager } from "./user-proxy-manager.js"
 import { createMcpProxyRoutes } from "./routes/mcp-proxy-routes.js"
 import logger from "./mcp-funnel-log.js"
 import { getErrorMessage } from "./utils.js"
+import { createProtocolValidation, createOriginValidation } from "./middleware/mcp-protocol-validation.js"
+import { loadOAuthConfig } from "./oauth/oauth-config.js"
+import { OAuthStore } from "./oauth/oauth-store.js"
+import { createOAuthRoutes } from "./oauth/oauth-server.js"
 
 const FileStore = connectSessionFileStore(session)
 
@@ -34,6 +38,10 @@ function createApp (config: McpFunnelConfig): { app: express.Application, statsM
     const userManager = new UserManager(authManager)
     const statsManager = new StatsManager(config.dataDir)
     const userProxyManager = new UserProxyManager(config.dataDir, statsManager)
+
+    const baseUrl = process.env["BASE_URL"] || `http://localhost:${config.port}`
+    const oauthConfig = loadOAuthConfig(config.dataDir, baseUrl)
+    const oauthStore = new OAuthStore(config.dataDir)
 
     /* Auto-create admin from env vars if needed */
     if (config.adminUser && config.adminPass && authManager.isSetupRequired()) {
@@ -150,8 +158,19 @@ function createApp (config: McpFunnelConfig): { app: express.Application, statsM
     app.use("/mcp-servers", requireAuth, createMcpRoutes(userProxyManager))
     app.use("/settings", requireAuth, createSettingsRoutes(authManager))
 
+    /* OAuth 2.1 endpoints (before MCP routes so .well-known is accessible) */
+    if (config.authMode !== "legacy") {
+        app.use("/", createOAuthRoutes(oauthConfig, oauthStore, authManager))
+    }
+
+    /* MCP protocol validation */
+    app.use("/mcp", createProtocolValidation(config.mcpProtocolVersions))
+    if (config.allowedOrigins.length > 0) {
+        app.use("/mcp", createOriginValidation(config.allowedOrigins))
+    }
+
     /* MCP protocol endpoint (API key authenticated, or bypassed in single-user mode) */
-    app.use("/mcp", createMcpProxyRoutes(userProxyManager, authManager, statsManager, config.singleUser))
+    app.use("/mcp", createMcpProxyRoutes(userProxyManager, authManager, statsManager, config.singleUser, oauthConfig))
 
     /* 404 */
     app.use((req, res) => {
