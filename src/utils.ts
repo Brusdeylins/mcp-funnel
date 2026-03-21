@@ -5,7 +5,7 @@
 
 import { Request } from "express"
 
-const VERSION = "1.1.1"
+const VERSION = "1.5.0"
 
 /**
  * Extract a human-readable message from an unknown error value.

@@ -1,5 +1,44 @@
 # Changelog
 
+## 1.5.0 (2026-03-20)
+
+### MCP Spec 2025-11-25 Compliance
+- Full proxy transparency: tool/resource/prompt metadata (title, icons, annotations, outputSchema) preserved end-to-end
+- Remove restrictive type casts on callTool results (structuredContent, isError now forwarded)
+- Add resources/templates/list handler for resource template aggregation
+- Add pagination (cursor/nextCursor) for tools/list, resources/list, prompts/list, resources/templates/list
+- Forward completion/complete context parameter to backends
+
+### Capability Negotiation
+- Backend clients now declare sampling, elicitation, and roots capabilities
+- Track inbound client capabilities after initialize (oninitialized hook)
+
+### Notification & Request Forwarding
+- Forward tools/list_changed, prompts/list_changed, resources/list_changed from backends (re-fetches tools on change)
+- Forward progress notifications bidirectionally
+- Forward cancellation notifications to all backends
+- Forward logging/setLevel to all backends
+- Forward roots/list requests and roots/list_changed notifications
+- Forward sampling/createMessage and elicitation/create from backends to inbound clients
+
+### OAuth 2.1 Authorization
+- OAuth 2.1 authorization server (RFC 8414, 9728, 7591)
+- Dynamic client registration, PKCE S256, JWT access tokens (RS256)
+- Unified auth middleware: legacy API keys + OAuth JWT (AUTH_MODE: both/oauth/legacy)
+- Protected resource metadata and authorization server metadata endpoints
+
+### Protocol Compliance
+- MCP-Protocol-Version header validation middleware
+- Origin validation with URL parsing (DNS rebinding protection)
+- WWW-Authenticate header on all 401 responses
+- Stale session ID returns 404 per MCP spec (instead of ephemeral fallback)
+
+### Experimental: Tasks
+- Task passthrough handlers: tasks/get, tasks/list, tasks/cancel, tasks/result
+- Task-augmented tool calls with task ID mapping
+- Task status notification forwarding
+- Task mapping cleanup on backend disconnect
+
 ## 1.1.2 (2026-02-15)
 
 ### Bug Fix

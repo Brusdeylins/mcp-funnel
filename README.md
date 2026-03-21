@@ -36,6 +36,20 @@ Multi-User MCP (Model Context Protocol) server management tool. Each user manage
 - User management (admin only)
 - Dark/light theme toggle
 
+**MCP Spec 2025-11-25 Compliance**
+- Full proxy transparency (tool/resource/prompt metadata preserved)
+- Capability negotiation (sampling, elicitation, roots)
+- Bidirectional notification forwarding (progress, cancellation, list changes)
+- Sampling & elicitation passthrough (backend → client)
+- Resource templates and pagination support
+- Experimental tasks support
+
+**Security & Protocol**
+- OAuth 2.1 authorization (RFC 8414, 9728, 7591) with PKCE S256
+- MCP-Protocol-Version header validation
+- Origin validation (DNS rebinding protection)
+- WWW-Authenticate headers on 401 responses
+
 **Infrastructure**
 - File-based storage (no database required)
 - Docker support
@@ -94,6 +108,26 @@ Configure your MCP client (e.g. Claude Code, Cursor) to connect to MCP-Funnel:
 
 The API key can be found in the web dashboard under Settings.
 
+## OAuth 2.1
+
+MCP-Funnel supports OAuth 2.1 authorization for MCP clients (RFC 8414, 9728, 7591).
+
+**Flow:** Discovery → Register → Authorize → Token → MCP
+
+Set `AUTH_MODE` to control authentication:
+- `both` (default) — Accept both OAuth JWT tokens and legacy `mcp_...` API keys
+- `oauth` — Only accept OAuth JWT tokens
+- `legacy` — Only accept legacy API keys
+
+**Endpoints:**
+- `/.well-known/oauth-protected-resource` — Protected resource metadata
+- `/.well-known/oauth-authorization-server` — Authorization server metadata
+- `/oauth/register` — Dynamic client registration
+- `/oauth/authorize` — Authorization endpoint
+- `/oauth/token` — Token endpoint (PKCE S256 required)
+
+Legacy `mcp_...` API keys continue to work in the default `both` mode.
+
 ## Configuration
 
 | Setting | Env Var | Default | Description |
@@ -106,6 +140,13 @@ The API key can be found in the web dashboard under Settings.
 | Admin user | `ADMIN_USER` | (none) | Auto-create admin username |
 | Admin pass | `ADMIN_PASS` | (none) | Auto-create admin password |
 | Log level | `LOG_LEVEL` | `info` | Winston log level |
+| Auth mode | `AUTH_MODE` | `both` | `both`, `oauth`, or `legacy` |
+| OAuth issuer | `OAUTH_ISSUER` | (auto) | OAuth issuer URL |
+| Token lifetime | `OAUTH_TOKEN_LIFETIME` | `3600` | Access token TTL in seconds |
+| Refresh token lifetime | `OAUTH_REFRESH_TOKEN_LIFETIME` | `86400` | Refresh token TTL in seconds |
+| Allowed origins | `ALLOWED_ORIGINS` | (none) | Comma-separated allowed origins |
+| Protocol versions | `MCP_PROTOCOL_VERSIONS` | `2025-11-25,2025-03-26` | Supported MCP versions |
+| Base URL | `BASE_URL` | (auto) | Public URL for OAuth metadata |
 
 The session secret is auto-generated on first start and persisted in `{dataDir}/session-secret.txt` if `SESSION_SECRET` is not set.
 
@@ -131,6 +172,7 @@ All data is stored as JSON files in the configured data directory:
 - `session-secret.txt` — Auto-generated session secret
 - `stats.json` — Per-user request statistics
 - `servers/{userId}.json` — Per-user MCP server configurations
+- `oauth/` — OAuth clients, JWK private key
 
 ## Development
 
