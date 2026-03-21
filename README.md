@@ -258,7 +258,7 @@ npm install
 npm run dev      # Watch mode with auto-rebuild
 npm run lint     # ESLint check
 npm run lint:fix # ESLint auto-fix
-npm test         # Run tests (129 tests)
+npm test         # Run tests (140 tests)
 ```
 
 ## License
