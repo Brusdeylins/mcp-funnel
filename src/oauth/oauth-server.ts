@@ -1,14 +1,21 @@
 /* MCP-Funnel — Multi-user MCP server management
  * Copyright (c) 2026 Matthias Brusdeylins
  * SPDX-License-Identifier: GPL-3.0-only
- * 100% AI-generated code (vibe-coding with Claude) */
+ * 100% AI-generated code (agentic coding with Claude Code) */
 
+import crypto from "crypto"
 import { Router, Request, Response } from "express"
 import { OAuthStore } from "./oauth-store.js"
 import { OAuthConfig } from "./oauth-config.js"
 import { createAccessToken, getJwks } from "./oauth-token.js"
 import { verifyPkceS256 } from "./pkce.js"
 import { AuthManager } from "../mcp-funnel-auth.js"
+
+function timingSafeEqual (a: string, b: string): boolean {
+    const ha = crypto.createHash("sha256").update(a).digest()
+    const hb = crypto.createHash("sha256").update(b).digest()
+    return crypto.timingSafeEqual(ha, hb)
+}
 
 function escapeHtml (str: string): string {
     return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
@@ -36,7 +43,7 @@ function createOAuthRoutes (config: OAuthConfig, store: OAuthStore, authManager:
             registration_endpoint: `${config.issuer}/oauth/register`,
             jwks_uri: `${config.issuer}/.well-known/jwks.json`,
             response_types_supported: ["code"],
-            grant_types_supported: ["authorization_code", "refresh_token"],
+            grant_types_supported: ["authorization_code", "refresh_token", "client_credentials"],
             token_endpoint_auth_methods_supported: ["client_secret_post", "none"],
             code_challenge_methods_supported: ["S256"],
             scopes_supported: ["mcp:full"]
@@ -220,7 +227,7 @@ form{margin-top:20px}label{display:block;margin:8px 0}input{width:100%;padding:8
 
                 /* Optionally verify client_secret */
                 const client = store.getClient(clientId)
-                if (client?.clientSecret && clientSecret && client.clientSecret !== clientSecret) {
+                if (client?.clientSecret && clientSecret && !timingSafeEqual(client.clientSecret, clientSecret)) {
                     res.status(401).json({ error: "invalid_client" })
                     return
                 }
@@ -237,6 +244,39 @@ form{margin-top:20px}label{display:block;margin:8px 0}input{width:100%;padding:8
                     expires_in: config.tokenLifetime,
                     refresh_token: newRefreshToken,
                     scope: authCode.scope
+                })
+            }
+            else if (grantType === "client_credentials") {
+                if (!clientId || !clientSecret) {
+                    res.status(400).json({ error: "invalid_request", error_description: "client_id and client_secret required for client_credentials" })
+                    return
+                }
+
+                const client = store.getClient(clientId)
+                if (!client || !client.clientSecret || !timingSafeEqual(client.clientSecret, clientSecret)) {
+                    res.status(401).json({ error: "invalid_client" })
+                    return
+                }
+
+                if (!client.grantTypes.includes("client_credentials")) {
+                    res.status(400).json({ error: "unauthorized_client", error_description: "Client not authorized for client_credentials grant" })
+                    return
+                }
+
+                /* Map client to its owner userId — look up via authManager */
+                const userId = store.getClientOwner(clientId) || `client:${clientId}`
+
+                const scope = body.scope as string || client.scope
+                const accessToken = await createAccessToken(
+                    config.dataDir, config.issuer, userId,
+                    config.issuer, scope, config.tokenLifetime
+                )
+
+                res.json({
+                    access_token: accessToken,
+                    token_type: "Bearer",
+                    expires_in: config.tokenLifetime,
+                    scope
                 })
             }
             else if (grantType === "refresh_token") {

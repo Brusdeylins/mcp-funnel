@@ -1,7 +1,7 @@
 /* MCP-Funnel — Multi-user MCP server management
  * Copyright (c) 2026 Matthias Brusdeylins
  * SPDX-License-Identifier: GPL-3.0-only
- * 100% AI-generated code (vibe-coding with Claude) */
+ * 100% AI-generated code (agentic coding with Claude Code) */
 
 import fs from "fs"
 import path from "path"
@@ -11,9 +11,22 @@ import { getErrorMessage } from "./utils.js"
 
 type ServerType = "sse" | "http" | "stdio"
 
+interface BackendOAuthState {
+    serverUrl: string
+    clientId?: string
+    clientSecret?: string
+    scope?: string
+    accessToken?: string
+    refreshToken?: string
+    expiresAt?: number
+    /* Stored as generic record for JSON persistence; typed as OAuthServerMetadata at runtime */
+    metadata?: Record<string, unknown>
+}
+
 interface UrlServerConfig {
     url: string
     headers?: Record<string, string>
+    oauth?: BackendOAuthState
 }
 
 interface StdioServerConfig {
@@ -301,4 +314,4 @@ class McpServerManager {
 }
 
 export { McpServerManager, trimConfigUrl, isUrlConfig, isStdioConfig }
-export type { ServerType, ServerConfig, UrlServerConfig, StdioServerConfig, McpServerEntry }
+export type { ServerType, ServerConfig, UrlServerConfig, StdioServerConfig, McpServerEntry, BackendOAuthState }

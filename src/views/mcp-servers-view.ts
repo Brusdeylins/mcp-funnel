@@ -1,7 +1,7 @@
 /* MCP-Funnel — Multi-user MCP server management
  * Copyright (c) 2026 Matthias Brusdeylins
  * SPDX-License-Identifier: GPL-3.0-only
- * 100% AI-generated code (vibe-coding with Claude) */
+ * 100% AI-generated code (agentic coding with Claude Code) */
 
 import { generateLayout, generatePageHeader } from "./layout-template.js"
 
@@ -175,10 +175,83 @@ function renderMcpServersPage (role: "admin" | "user", username: string): string
           </div>
         </div>
       </div>
+    </div>
+
+    `
+
+    const oauthModalHtml = `
+    <!-- OAuth Configuration Modal -->
+    <div id="oauthModal" class="modal modal-blur fade" tabindex="-1" aria-labelledby="oauthModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="oauthModalLabel">
+              <svg xmlns="http://www.w3.org/2000/svg" class="icon me-2" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 17a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" /><path d="M14 12v3" /><path d="M4 12a8 8 0 0 1 16 0" /><path d="M4 12v4a4 4 0 0 0 4 4h2" /></svg>
+              OAuth 2.1 — <span id="oauthServerName"></span>
+            </h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <input type="hidden" id="oauthServerId">
+
+            <!-- Step 1: Discovery -->
+            <div id="oauthStep1">
+              <label class="form-label">OAuth Server URL</label>
+              <div class="input-group mb-2">
+                <input type="url" id="oauthServerUrl" class="form-control" placeholder="https://backend-server.example.com">
+                <button class="btn btn-outline-primary" onclick="oauthDiscover()" id="oauthDiscoverBtn">Discover</button>
+              </div>
+              <small class="form-hint">The base URL of the OAuth-protected MCP server. The funnel will look for <code>.well-known/oauth-authorization-server</code>.</small>
+            </div>
+
+            <!-- Step 2: Client ID (shown if manual entry needed) -->
+            <div id="oauthStep2" class="d-none mt-3">
+              <label class="form-label">Client ID</label>
+              <input type="text" id="oauthClientId" class="form-control mb-2" placeholder="client-id">
+              <label class="form-label">Client Secret (optional)</label>
+              <input type="password" id="oauthClientSecret" class="form-control mb-2" placeholder="client-secret">
+              <label class="form-label">Scope</label>
+              <input type="text" id="oauthScope" class="form-control mb-2" value="mcp:full">
+              <button class="btn btn-outline-primary" onclick="oauthSaveClient()">Save Client</button>
+            </div>
+
+            <!-- Step 3: Authorize -->
+            <div id="oauthStep3" class="d-none mt-3">
+              <div class="alert alert-info">
+                <strong>Ready to authorize.</strong> Click the button below to open the backend's login page. After authorizing, the token will be saved automatically.
+              </div>
+              <a id="oauthAuthorizeLink" class="btn btn-primary" target="_blank" rel="noopener">Authorize</a>
+            </div>
+
+            <!-- Status -->
+            <div id="oauthStatus" class="mt-3 d-none">
+              <div class="card">
+                <div class="card-body py-2">
+                  <div class="d-flex align-items-center">
+                    <span id="oauthStatusIcon" class="me-2"></span>
+                    <span id="oauthStatusText"></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Discovery result -->
+            <div id="oauthDiscoveryResult" class="mt-3 d-none">
+              <small class="text-muted">Discovered endpoints:</small>
+              <pre id="oauthDiscoveryInfo" class="mt-1" style="font-size:12px; max-height:120px; overflow:auto"></pre>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn" data-bs-dismiss="modal">Close</button>
+            <button type="button" class="btn btn-outline-danger d-none" id="oauthRemoveBtn" onclick="oauthRemove()">Remove OAuth</button>
+          </div>
+        </div>
+      </div>
     </div>`
 
     const scripts = `<script>
     var editModal = null;
+    var oauthModalInstance = null;
 
     document.addEventListener('DOMContentLoaded', function() {
       updateConfigFields();
@@ -192,7 +265,143 @@ function renderMcpServersPage (role: "admin" | "user", username: string): string
           }
         });
       }
+      var oauthModalEl = document.getElementById('oauthModal');
+      if (oauthModalEl && typeof bootstrap !== 'undefined') {
+        oauthModalInstance = new bootstrap.Modal(oauthModalEl);
+      }
     });
+
+    async function openOAuthModal(id, name) {
+      document.getElementById('oauthServerId').value = id;
+      document.getElementById('oauthServerName').textContent = name;
+      document.getElementById('oauthStep1').classList.remove('d-none');
+      document.getElementById('oauthStep2').classList.add('d-none');
+      document.getElementById('oauthStep3').classList.add('d-none');
+      document.getElementById('oauthStatus').classList.add('d-none');
+      document.getElementById('oauthDiscoveryResult').classList.add('d-none');
+      document.getElementById('oauthRemoveBtn').classList.add('d-none');
+      document.getElementById('oauthServerUrl').value = '';
+
+      if (oauthModalInstance) oauthModalInstance.show();
+
+      /* Load current OAuth status */
+      try {
+        var response = await fetch('/mcp-servers/api/' + id + '/oauth/status');
+        var data = await response.json();
+        if (data.configured) {
+          document.getElementById('oauthServerUrl').value = data.serverUrl || '';
+          document.getElementById('oauthRemoveBtn').classList.remove('d-none');
+          if (data.hasToken) {
+            showOAuthStatus(data.isExpired
+              ? 'Token expired' + (data.hasRefreshToken ? ' (has refresh token)' : '')
+              : 'Token valid (expires in ' + formatDuration(data.expiresIn) + ')',
+              data.isExpired ? 'warning' : 'success');
+          }
+          if (data.clientId) {
+            showOAuthAuthorize(id);
+          }
+        }
+      } catch (e) { /* ignore */ }
+    }
+
+    function formatDuration(seconds) {
+      if (seconds > 3600) return Math.floor(seconds / 3600) + 'h ' + Math.floor((seconds % 3600) / 60) + 'min';
+      if (seconds > 60) return Math.floor(seconds / 60) + 'min';
+      return seconds + 's';
+    }
+
+    function showOAuthStatus(message, type) {
+      var statusEl = document.getElementById('oauthStatus');
+      var iconEl = document.getElementById('oauthStatusIcon');
+      var textEl = document.getElementById('oauthStatusText');
+      statusEl.classList.remove('d-none');
+      textEl.textContent = message;
+      if (type === 'success') iconEl.innerHTML = '<span class="badge bg-success">OK</span>';
+      else if (type === 'warning') iconEl.innerHTML = '<span class="badge bg-warning text-dark">!</span>';
+      else iconEl.innerHTML = '<span class="badge bg-danger">X</span>';
+    }
+
+    function showOAuthAuthorize(id) {
+      document.getElementById('oauthStep3').classList.remove('d-none');
+      document.getElementById('oauthAuthorizeLink').href = '/mcp-servers/api/' + id + '/oauth/authorize';
+    }
+
+    async function oauthDiscover() {
+      var id = document.getElementById('oauthServerId').value;
+      var serverUrl = document.getElementById('oauthServerUrl').value.trim();
+      if (!serverUrl) { showNotification('Enter an OAuth server URL', 'warning'); return; }
+
+      var btn = document.getElementById('oauthDiscoverBtn');
+      var origHtml = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+      try {
+        var response = await fetch('/mcp-servers/api/' + id + '/oauth/discover', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ serverUrl: serverUrl })
+        });
+        var data = await response.json();
+        if (!response.ok) throw new Error(data.error);
+
+        document.getElementById('oauthDiscoveryResult').classList.remove('d-none');
+        document.getElementById('oauthDiscoveryInfo').textContent = JSON.stringify(data.metadata, null, 2);
+        document.getElementById('oauthRemoveBtn').classList.remove('d-none');
+
+        if (data.needsManualClientId) {
+          document.getElementById('oauthStep2').classList.remove('d-none');
+          showOAuthStatus('Discovery OK. Manual client registration required.', 'warning');
+        } else {
+          showOAuthStatus('Discovery OK. Client registered: ' + data.clientId, 'success');
+          showOAuthAuthorize(id);
+        }
+      } catch (error) {
+        showOAuthStatus('Discovery failed: ' + error.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = origHtml;
+      }
+    }
+
+    async function oauthSaveClient() {
+      var id = document.getElementById('oauthServerId').value;
+      var clientId = document.getElementById('oauthClientId').value.trim();
+      var clientSecret = document.getElementById('oauthClientSecret').value.trim();
+      var scope = document.getElementById('oauthScope').value.trim();
+      if (!clientId) { showNotification('Client ID is required', 'warning'); return; }
+
+      try {
+        var response = await fetch('/mcp-servers/api/' + id + '/oauth/client', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ clientId: clientId, clientSecret: clientSecret || undefined, scope: scope || undefined })
+        });
+        var data = await response.json();
+        if (!response.ok) throw new Error(data.error);
+
+        showOAuthStatus('Client credentials saved', 'success');
+        document.getElementById('oauthStep2').classList.add('d-none');
+        showOAuthAuthorize(id);
+      } catch (error) {
+        showOAuthStatus('Save failed: ' + error.message, 'error');
+      }
+    }
+
+    async function oauthRemove() {
+      var id = document.getElementById('oauthServerId').value;
+      if (!confirm('Remove OAuth configuration for this server?')) return;
+      try {
+        var response = await fetch('/mcp-servers/api/' + id + '/oauth', { method: 'DELETE' });
+        var data = await response.json();
+        if (!response.ok) throw new Error(data.error);
+        showNotification('OAuth configuration removed', 'success');
+        if (oauthModalInstance) oauthModalInstance.hide();
+        loadServers();
+      } catch (error) {
+        showNotification('Failed: ' + error.message, 'danger');
+      }
+    }
 
     function updateConfigFields() {
       var type = document.getElementById('serverType').value;
@@ -232,6 +441,7 @@ function renderMcpServersPage (role: "admin" | "user", username: string): string
           '    <option value="apikey">API Key Header</option>' +
           '    <option value="urlparam">URL Parameter</option>' +
           '    <option value="custom">Custom Header</option>' +
+          '    <option value="oauth">OAuth 2.1</option>' +
           '  </select>' +
           '</div>' +
           '<div class="col-md-8" id="authFieldsContainer"></div>';
@@ -287,6 +497,11 @@ function renderMcpServersPage (role: "admin" | "user", username: string): string
             '  <div class="col-5"><input type="text" id="authHeaderName" class="form-control" placeholder="Header-Name"></div>' +
             '  <div class="col-7"><input type="text" id="authToken" class="form-control" placeholder="Header value"></div>' +
             '</div>';
+          break;
+        case 'oauth':
+          container.innerHTML =
+            '<label class="form-label">OAuth 2.1</label>' +
+            '<small class="form-hint">OAuth is configured after adding the server. Add the server first, then use the OAuth button in the server actions.</small>';
           break;
       }
     }
@@ -414,6 +629,9 @@ function renderMcpServersPage (role: "admin" | "user", username: string): string
               '<button class="btn btn-icon btn-outline-primary" onclick="refreshServer(\\'' + server.id + '\\')" title="Refresh" id="refresh-' + server.id + '">' +
                 '<svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4" /><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4" /></svg>' +
               '</button>' +
+              (server.type !== 'stdio' ? '<button class="btn btn-icon btn-outline-cyan" onclick="openOAuthModal(\\'' + server.id + '\\', \\'' + escapeHtml(server.name) + '\\')" title="OAuth 2.1">' +
+                '<svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 17a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" /><path d="M14 12v3" /><path d="M4 12a8 8 0 0 1 16 0" /><path d="M4 12v4a4 4 0 0 0 4 4h2" /></svg>' +
+              '</button>' : '') +
               '<button class="btn btn-icon btn-outline-teal" onclick="editServer(\\'' + server.id + '\\')" title="Manage Tools">' +
                 '<svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 10h3v-3l-3.5 -3.5a6 6 0 0 1 8 8l6 6a2 2 0 0 1 -3 3l-6 -6a6 6 0 0 1 -8 -8l3.5 3.5" /></svg>' +
               '</button>' +
@@ -482,6 +700,7 @@ function renderMcpServersPage (role: "admin" | "user", username: string): string
 
     function getAuthType(server) {
       if (server.type === 'stdio') return 'Local';
+      if (server.config && server.config.oauth) return 'OAuth';
       var url = server.config ? server.config.url || '' : '';
       if (url.includes('?') && url.includes('=')) return 'URL Param';
       var headers = server.config ? server.config.headers : null;
@@ -755,7 +974,7 @@ function renderMcpServersPage (role: "admin" | "user", username: string): string
 
     return generateLayout({
         title: "MCP-Funnel - MCP Servers",
-        content,
+        content: content + oauthModalHtml,
         currentPage: "mcp-servers",
         scripts,
         role,

@@ -1,8 +1,9 @@
 /* MCP-Funnel — Multi-user MCP server management
  * Copyright (c) 2026 Matthias Brusdeylins
  * SPDX-License-Identifier: GPL-3.0-only
- * 100% AI-generated code (vibe-coding with Claude) */
+ * 100% AI-generated code (agentic coding with Claude Code) */
 
+import crypto from "crypto"
 import { Router, Request, Response } from "express"
 import { UserProxyManager } from "../user-proxy-manager.js"
 import { renderMcpServersPage } from "../views/mcp-servers-view.js"
@@ -10,6 +11,8 @@ import { trimConfigUrl } from "../mcp-server-manager.js"
 import type { ServerConfig, UrlServerConfig, StdioServerConfig } from "../mcp-server-manager.js"
 import logger from "../mcp-funnel-log.js"
 import { getErrorMessage, getSessionUserId } from "../utils.js"
+import { discoverOAuthMetadata, registerOAuthClient, generatePkceChallenge, buildAuthorizationUrl, exchangeCodeForToken } from "../oauth/oauth-client.js"
+import type { OAuthServerMetadata } from "../oauth/oauth-client.js"
 
 function createMcpRoutes (userProxyManager: UserProxyManager): Router {
     const router = Router()
@@ -391,6 +394,9 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
         }
     })
 
+    /* Backend OAuth routes */
+    registerBackendOAuthRoutes(router, userProxyManager)
+
     /* POST /mcp-servers/api/:id/refresh */
     router.post("/api/:id/refresh", async (req: Request, res: Response) => {
         try {
@@ -439,6 +445,312 @@ function createMcpRoutes (userProxyManager: UserProxyManager): Router {
     })
 
     return router
+}
+
+/* ── Backend OAuth Routes ─────────────────────────────── */
+
+function escapeHtml (str: string): string {
+    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+}
+
+function registerBackendOAuthRoutes (router: Router, userProxyManager: UserProxyManager): void {
+    /* In-memory PKCE verifiers for pending authorization flows */
+    const pendingAuthFlows = new Map<string, { verifier: string; serverId: string; userId: string }>()
+
+    /* POST /mcp-servers/api/:id/oauth/discover — Discover OAuth metadata + register client */
+    router.post("/api/:id/oauth/discover", async (req: Request, res: Response) => {
+        try {
+            const userId = getSessionUserId(req)
+            const serverManager = userProxyManager.getServerManager(userId)
+            const id = req.params["id"] as string
+            const { serverUrl } = req.body as { serverUrl: string }
+
+            if (!serverUrl) {
+                res.status(400).json({ error: "serverUrl is required" })
+                return
+            }
+
+            const server = serverManager.getServer(id)
+            if (!server) {
+                res.status(404).json({ error: "MCP server not found" })
+                return
+            }
+
+            /* Discover metadata */
+            const metadata = await discoverOAuthMetadata(serverUrl)
+
+            /* Register client if registration endpoint available */
+            const baseUrl = req.protocol + "://" + req.get("host")
+            const redirectUri = `${baseUrl}/mcp-servers/api/${id}/oauth/callback`
+            let clientId: string | undefined
+            let clientSecret: string | undefined
+
+            if (metadata.registration_endpoint) {
+                const registration = await registerOAuthClient(metadata, `mcp-funnel (${server.name})`, redirectUri)
+                clientId = registration.clientId
+                clientSecret = registration.clientSecret
+            }
+
+            /* Save OAuth config to server */
+            const config = server.config as UrlServerConfig
+            config.oauth = {
+                serverUrl,
+                clientId,
+                clientSecret,
+                scope: metadata.scopes_supported?.[0] || "mcp:full",
+                metadata: metadata as unknown as Record<string, unknown>
+            }
+            serverManager.updateServer(id, { config })
+
+            res.json({
+                success: true,
+                message: "OAuth discovered" + (clientId ? " and client registered" : ""),
+                metadata: {
+                    issuer: metadata.issuer,
+                    authorization_endpoint: metadata.authorization_endpoint,
+                    token_endpoint: metadata.token_endpoint,
+                    registration_endpoint: metadata.registration_endpoint,
+                    grant_types_supported: metadata.grant_types_supported,
+                    scopes_supported: metadata.scopes_supported
+                },
+                clientId,
+                needsManualClientId: !clientId
+            })
+        }
+        catch (error) {
+            const msg = getErrorMessage(error)
+            logger.error(`OAuth discovery failed: ${msg}`)
+            res.status(400).json({ error: msg })
+        }
+    })
+
+    /* POST /mcp-servers/api/:id/oauth/client — Manually set client credentials */
+    router.post("/api/:id/oauth/client", async (req: Request, res: Response) => {
+        try {
+            const userId = getSessionUserId(req)
+            const serverManager = userProxyManager.getServerManager(userId)
+            const id = req.params["id"] as string
+            const { clientId, clientSecret, scope } = req.body as { clientId: string; clientSecret?: string; scope?: string }
+
+            const server = serverManager.getServer(id)
+            if (!server) {
+                res.status(404).json({ error: "MCP server not found" })
+                return
+            }
+
+            const config = server.config as UrlServerConfig
+            if (!config.oauth) {
+                res.status(400).json({ error: "Run OAuth discovery first" })
+                return
+            }
+
+            config.oauth.clientId = clientId
+            config.oauth.clientSecret = clientSecret
+            if (scope) config.oauth.scope = scope
+            serverManager.updateServer(id, { config })
+
+            res.json({ success: true, message: "OAuth client credentials saved" })
+        }
+        catch (error) {
+            res.status(400).json({ error: getErrorMessage(error) })
+        }
+    })
+
+    /* GET /mcp-servers/api/:id/oauth/authorize — Redirect to backend IdP */
+    router.get("/api/:id/oauth/authorize", (req: Request, res: Response) => {
+        try {
+            const userId = getSessionUserId(req)
+            const serverManager = userProxyManager.getServerManager(userId)
+            const id = req.params["id"] as string
+
+            const server = serverManager.getServer(id)
+            if (!server) {
+                res.status(404).json({ error: "MCP server not found" })
+                return
+            }
+
+            const config = server.config as UrlServerConfig
+            if (!config.oauth?.clientId || !config.oauth?.metadata) {
+                res.status(400).json({ error: "OAuth not configured. Run discovery first." })
+                return
+            }
+
+            const { verifier, challenge } = generatePkceChallenge()
+            const state = crypto.randomUUID()
+            const baseUrl = req.protocol + "://" + req.get("host")
+            const redirectUri = `${baseUrl}/mcp-servers/api/${id}/oauth/callback`
+
+            pendingAuthFlows.set(state, { verifier, serverId: id, userId })
+
+            /* Clean up old flows after 10 minutes */
+            setTimeout(() => pendingAuthFlows.delete(state), 600000)
+
+            const authUrl = buildAuthorizationUrl(
+                config.oauth.metadata as unknown as OAuthServerMetadata,
+                config.oauth.clientId,
+                redirectUri,
+                config.oauth.scope || "mcp:full",
+                state,
+                challenge
+            )
+
+            res.redirect(authUrl)
+        }
+        catch (error) {
+            res.status(400).json({ error: getErrorMessage(error) })
+        }
+    })
+
+    /* GET /mcp-servers/api/:id/oauth/callback — Handle authorization callback */
+    router.get("/api/:id/oauth/callback", async (req: Request, res: Response) => {
+        try {
+            const id = req.params["id"] as string
+            const code = req.query.code as string
+            const state = req.query.state as string
+            const errorParam = req.query.error as string
+
+            if (errorParam) {
+                const safeError = escapeHtml(errorParam)
+                res.send(`<html><body><h2>Authorization Failed</h2><p>${safeError}</p><script>setTimeout(function(){window.close()},3000)</script></body></html>`)
+                return
+            }
+
+            if (!code || !state) {
+                res.status(400).send("Missing code or state parameter")
+                return
+            }
+
+            const flow = pendingAuthFlows.get(state)
+            if (!flow || flow.serverId !== id) {
+                res.status(400).send("Invalid or expired state")
+                return
+            }
+            pendingAuthFlows.delete(state)
+
+            const serverManager = userProxyManager.getServerManager(flow.userId)
+            const server = serverManager.getServer(id)
+            if (!server) {
+                res.status(404).send("Server not found")
+                return
+            }
+
+            const config = server.config as UrlServerConfig
+            if (!config.oauth?.metadata || !config.oauth.clientId) {
+                res.status(400).send("OAuth not configured")
+                return
+            }
+
+            const baseUrl = req.protocol + "://" + req.get("host")
+            const redirectUri = `${baseUrl}/mcp-servers/api/${id}/oauth/callback`
+
+            const tokenResult = await exchangeCodeForToken(
+                config.oauth.metadata as unknown as OAuthServerMetadata,
+                config.oauth.clientId,
+                code,
+                redirectUri,
+                flow.verifier,
+                config.oauth.clientSecret
+            )
+
+            config.oauth.accessToken = tokenResult.accessToken
+            config.oauth.refreshToken = tokenResult.refreshToken
+            config.oauth.expiresAt = Date.now() + tokenResult.expiresIn * 1000
+            serverManager.updateServer(id, { config })
+
+            logger.info(`[${flow.userId}] OAuth token obtained for backend server ${server.name}`)
+
+            /* Reconnect the server with the new token */
+            if (userProxyManager.isInitialized(flow.userId)) {
+                const proxy = await userProxyManager.getProxy(flow.userId)
+                try {
+                    await proxy.reconnectServer(id)
+                }
+                catch (err) {
+                    logger.warn(`Failed to reconnect after OAuth: ${getErrorMessage(err)}`)
+                }
+            }
+
+            const safeName = escapeHtml(server.name)
+            res.send(`<html><body><h2>Authorization Successful</h2><p>Token obtained for ${safeName}. You can close this window.</p><script>setTimeout(function(){window.close()},2000)</script></body></html>`)
+        }
+        catch (error) {
+            const msg = getErrorMessage(error)
+            logger.error(`OAuth callback failed: ${msg}`)
+            res.status(500).send(`<html><body><h2>Error</h2><p>${escapeHtml(msg)}</p></body></html>`)
+        }
+    })
+
+    /* GET /mcp-servers/api/:id/oauth/status — Check OAuth token status */
+    router.get("/api/:id/oauth/status", (req: Request, res: Response) => {
+        try {
+            const userId = getSessionUserId(req)
+            const serverManager = userProxyManager.getServerManager(userId)
+            const id = req.params["id"] as string
+
+            const server = serverManager.getServer(id)
+            if (!server) {
+                res.status(404).json({ error: "MCP server not found" })
+                return
+            }
+
+            const config = server.config as UrlServerConfig
+            if (!config.oauth) {
+                res.json({ configured: false })
+                return
+            }
+
+            const hasToken = !!config.oauth.accessToken
+            const expiresAt = config.oauth.expiresAt
+            const isExpired = expiresAt ? Date.now() > expiresAt : true
+            const expiresIn = expiresAt ? Math.max(0, Math.floor((expiresAt - Date.now()) / 1000)) : 0
+
+            res.json({
+                configured: true,
+                hasToken,
+                isExpired: hasToken ? isExpired : undefined,
+                expiresIn: hasToken ? expiresIn : undefined,
+                hasRefreshToken: !!config.oauth.refreshToken,
+                clientId: config.oauth.clientId,
+                scope: config.oauth.scope,
+                serverUrl: config.oauth.serverUrl
+            })
+        }
+        catch (error) {
+            res.status(400).json({ error: getErrorMessage(error) })
+        }
+    })
+
+    /* DELETE /mcp-servers/api/:id/oauth — Remove OAuth configuration */
+    router.delete("/api/:id/oauth", (req: Request, res: Response) => {
+        try {
+            const userId = getSessionUserId(req)
+            const serverManager = userProxyManager.getServerManager(userId)
+            const id = req.params["id"] as string
+
+            const server = serverManager.getServer(id)
+            if (!server) {
+                res.status(404).json({ error: "MCP server not found" })
+                return
+            }
+
+            const config = server.config as UrlServerConfig
+            delete config.oauth
+
+            /* Also remove Authorization header that was set by OAuth */
+            if (config.headers?.Authorization?.startsWith("Bearer ")) {
+                delete config.headers.Authorization
+                if (Object.keys(config.headers).length === 0) {
+                    delete config.headers
+                }
+            }
+            serverManager.updateServer(id, { config })
+
+            res.json({ success: true, message: "OAuth configuration removed" })
+        }
+        catch (error) {
+            res.status(400).json({ error: getErrorMessage(error) })
+        }
+    })
 }
 
 export { createMcpRoutes }

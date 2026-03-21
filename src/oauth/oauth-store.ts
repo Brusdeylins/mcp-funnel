@@ -1,7 +1,7 @@
 /* MCP-Funnel — Multi-user MCP server management
  * Copyright (c) 2026 Matthias Brusdeylins
  * SPDX-License-Identifier: GPL-3.0-only
- * 100% AI-generated code (vibe-coding with Claude) */
+ * 100% AI-generated code (agentic coding with Claude Code) */
 
 import fs from "fs"
 import path from "path"
@@ -15,6 +15,7 @@ interface OAuthClient {
     grantTypes: string[]
     responseTypes: string[]
     scope: string
+    ownerId?: string
     createdAt: number
 }
 
@@ -69,7 +70,7 @@ class OAuthStore {
         fs.writeFileSync(this.clientsFile(), JSON.stringify([...this.clients.values()], null, 2))
     }
 
-    registerClient (params: { clientName: string; redirectUris: string[]; grantTypes?: string[]; responseTypes?: string[]; scope?: string }): OAuthClient {
+    registerClient (params: { clientName: string; redirectUris: string[]; grantTypes?: string[]; responseTypes?: string[]; scope?: string; ownerId?: string }): OAuthClient {
         const clientId = crypto.randomUUID()
         const clientSecret = crypto.randomBytes(32).toString("hex")
         const client: OAuthClient = {
@@ -80,6 +81,7 @@ class OAuthStore {
             grantTypes: params.grantTypes || ["authorization_code", "refresh_token"],
             responseTypes: params.responseTypes || ["code"],
             scope: params.scope || "mcp:full",
+            ownerId: params.ownerId,
             createdAt: Date.now()
         }
         this.clients.set(clientId, client)
@@ -89,6 +91,10 @@ class OAuthStore {
 
     getClient (clientId: string): OAuthClient | undefined {
         return this.clients.get(clientId)
+    }
+
+    getClientOwner (clientId: string): string | undefined {
+        return this.clients.get(clientId)?.ownerId
     }
 
     createAuthorizationCode (clientId: string, userId: string, redirectUri: string, scope: string, codeChallenge: string, codeChallengeMethod: string): string {

@@ -4,59 +4,61 @@
 
 # MCP-Funnel
 
-Multi-User MCP (Model Context Protocol) server management tool. Each user manages their own MCP server configurations and gets a personal API key. MCP-Funnel funnels multiple MCP servers into a single endpoint per user, reducing LLM context usage via 3 meta-tools (`mcp_discover_tools`, `mcp_get_tool_schema`, `mcp_call_tool`). 100% AI-generated code (vibe-coding with Claude).
+Multi-user MCP proxy that funnels multiple backend MCP servers into a single endpoint per user. Instead of exposing hundreds of tools directly, MCP-Funnel provides 3 meta-tools for lazy, search-based tool discovery — keeping LLM context usage minimal. 100% AI-generated code (agentic coding with Claude Code).
 
 ![License](https://img.shields.io/badge/license-GPL--3.0--only-blue)
 
-<img src="gfx/screenshot.png" alt="MCP-Funnel" width="1000"  />
+## Architecture
+
+```mermaid
+graph LR
+    C1[MCP Client<br>Claude Code] -->|Streamable HTTP<br>+ Bearer Token| F[MCP-Funnel]
+    C2[MCP Client<br>Cursor] -->|Streamable HTTP<br>+ OAuth JWT| F
+
+    F -->|HTTP| B1[Backend MCP Server 1]
+    F -->|SSE| B2[Backend MCP Server 2]
+    F -->|Stdio| B3[Backend MCP Server 3]
+    F -->|HTTP + OAuth| B4[Backend MCP Server 4]
+
+    style F fill:#4a90d9,color:#fff
+```
+
+**How it works:**
+- Clients connect to MCP-Funnel via a single endpoint (`/mcp`)
+- Each user has their own set of backend MCP servers, configured via the web dashboard
+- Tools are discovered lazily through `mcp_discover_tools` (search) → `mcp_get_tool_schema` (inspect) → `mcp_call_tool` (execute)
+- All MCP spec features (resources, prompts, notifications, sampling, elicitation) are proxied transparently
+
+<img src="gfx/screenshot.png" alt="MCP-Funnel" width="1000" />
 
 ## Features
 
-**MCP Proxy**
-- Funnels multiple backend MCP servers into a single endpoint per user
-- 3 meta-tools for lazy tool discovery: `mcp_discover_tools`, `mcp_get_tool_schema`, `mcp_call_tool`
-- Relevance scoring with fuzzy matching (Levenshtein) — typos in keywords still return results
-- Dynamic tool count in `mcp_discover_tools` description so the LLM knows how many tools are searchable
-- Supports Streamable HTTP, SSE, and Stdio transports to backend servers
-- Exposes both Streamable HTTP and SSE transport for MCP clients
+### MCP Proxy
+- 3 meta-tools for lazy discovery: `mcp_discover_tools`, `mcp_get_tool_schema`, `mcp_call_tool`
+- Fuzzy matching with relevance scoring (Levenshtein distance) — typos still find tools
+- Supports Streamable HTTP, SSE, and Stdio transports to backends
 - Per-server tool enable/disable control
 - Automatic reconnection with exponential backoff
-- Forwards resource subscriptions, completions, and log messages from backend servers
 
-**User Isolation**
-- Per-user MCP server registrations (each user has their own server config file)
-- Per-user API keys (Bearer token authentication)
-- Complete isolation — users cannot see or access each other's MCP servers or tools
-
-**Administration**
-- Admin setup with secure password hashing (bcrypt)
-- Multi-user support with per-user API keys
-- Single-user mode (`--single-user`) for local use without authentication
-- Web dashboard with API key management and MCP server status
-- User management (admin only)
-- Dark/light theme toggle
-
-**MCP Spec 2025-11-25 Compliance**
-- Full proxy transparency (tool/resource/prompt metadata preserved)
+### MCP Spec 2025-11-25
+- Full proxy transparency — tool/resource/prompt metadata (title, icons, annotations, outputSchema) preserved
 - Capability negotiation (sampling, elicitation, roots)
 - Bidirectional notification forwarding (progress, cancellation, list changes)
-- Sampling & elicitation passthrough (backend → client)
-- Resource templates and pagination support
+- Sampling & elicitation passthrough (backend to client)
+- Resource templates, pagination, completions
 - Experimental tasks support
 
-**Security & Protocol**
-- OAuth 2.1 authorization (RFC 8414, 9728, 7591) with PKCE S256
-- MCP-Protocol-Version header validation
-- Origin validation (DNS rebinding protection)
-- WWW-Authenticate headers on 401 responses
+### Authentication
+- **Inbound** (clients to funnel): Legacy API keys, OAuth 2.1 (Authorization Code + PKCE, Client Credentials), or both
+- **Outbound** (funnel to backends): Static tokens, Basic Auth, API keys, OAuth 2.1 with automatic token refresh
+- Per-user API key isolation
+- MCP-Protocol-Version validation, origin validation, WWW-Authenticate headers
 
-**Infrastructure**
+### Administration
+- Web dashboard with MCP server management, tool control, and user management
+- Single-user mode (`--single-user`) for local use without authentication
 - File-based storage (no database required)
 - Docker support
-- CLI with configurable port and data directory
-- Security headers via Helmet (HSTS, CSP, etc.)
-- Rate limiting on login and setup endpoints
-- Request statistics tracking per user
 
 ## Quick Start
 
@@ -66,9 +68,9 @@ Multi-User MCP (Model Context Protocol) server management tool. Each user manage
 docker compose up --build
 ```
 
-Open `http://localhost:3000` and complete the initial setup.
+Open `http://localhost:3000`, complete the admin setup, then add your MCP servers via the dashboard.
 
-### Auto-create admin via environment:
+### Auto-create admin via environment
 
 ```bash
 ADMIN_USER=admin ADMIN_PASS=your-password docker compose up --build
@@ -79,18 +81,12 @@ ADMIN_USER=admin ADMIN_PASS=your-password docker compose up --build
 ```bash
 npm install
 npm run build
-npm start
-```
-
-Or with options:
-
-```bash
-node dst/mcp-funnel.js --port 8080 --data-dir ./my-data
+npm start -- --port 8080 --data-dir ./my-data
 ```
 
 ## MCP Client Configuration
 
-Configure your MCP client (e.g. Claude Code, Cursor) to connect to MCP-Funnel:
+### API Key (default)
 
 ```json
 {
@@ -106,49 +102,125 @@ Configure your MCP client (e.g. Claude Code, Cursor) to connect to MCP-Funnel:
 }
 ```
 
-The API key can be found in the web dashboard under Settings.
+The API key is shown in the web dashboard under Settings.
 
-## OAuth 2.1
+### OAuth 2.1
 
-MCP-Funnel supports OAuth 2.1 authorization for MCP clients (RFC 8414, 9728, 7591).
+MCP clients that support OAuth 2.1 can authenticate via the standard flow. MCP-Funnel exposes the required discovery endpoints:
 
-**Flow:** Discovery → Register → Authorize → Token → MCP
+| Endpoint | Description |
+|---|---|
+| `/.well-known/oauth-protected-resource` | Protected resource metadata (RFC 9728) |
+| `/.well-known/oauth-authorization-server` | Authorization server metadata (RFC 8414) |
+| `/oauth/register` | Dynamic client registration (RFC 7591) |
+| `/oauth/authorize` | Authorization endpoint |
+| `/oauth/token` | Token endpoint |
 
-Set `AUTH_MODE` to control authentication:
-- `both` (default) — Accept both OAuth JWT tokens and legacy `mcp_...` API keys
-- `oauth` — Only accept OAuth JWT tokens
-- `legacy` — Only accept legacy API keys
+**Supported grant types:** `authorization_code` (with PKCE S256), `refresh_token`, `client_credentials`
 
-**Endpoints:**
-- `/.well-known/oauth-protected-resource` — Protected resource metadata
-- `/.well-known/oauth-authorization-server` — Authorization server metadata
-- `/oauth/register` — Dynamic client registration
-- `/oauth/authorize` — Authorization endpoint
-- `/oauth/token` — Token endpoint (PKCE S256 required)
+**`AUTH_MODE`** controls which authentication methods are accepted:
 
-Legacy `mcp_...` API keys continue to work in the default `both` mode.
+| Mode | API Keys | OAuth JWT |
+|---|---|---|
+| `both` (default) | Yes | Yes |
+| `oauth` | No | Yes |
+| `legacy` | Yes | No |
+
+#### Client Credentials (Machine-to-Machine)
+
+For automated systems that don't have a user context:
+
+1. Register a client: `POST /oauth/register` with `grant_types: ["client_credentials"]`
+2. Request a token: `POST /oauth/token` with `grant_type=client_credentials&client_id=...&client_secret=...`
+3. Use the token: `Authorization: Bearer <jwt>`
+
+## Backend Authentication
+
+When adding backend MCP servers, MCP-Funnel supports several authentication methods:
+
+| Method | Description |
+|---|---|
+| None | No authentication |
+| Bearer Token | Static `Authorization: Bearer <token>` header |
+| Basic Auth | `Authorization: Basic <base64>` header |
+| API Key | Custom header (e.g., `X-API-Key`) |
+| URL Parameter | Token appended to URL |
+| Custom Header | Arbitrary header name and value |
+| **OAuth 2.1** | Full OAuth client with automatic token refresh |
+
+### Backend OAuth 2.1
+
+For backends that require OAuth 2.1, MCP-Funnel acts as an OAuth client:
+
+```mermaid
+sequenceDiagram
+    participant U as Admin (Browser)
+    participant F as MCP-Funnel
+    participant B as Backend IdP
+
+    U->>F: Click OAuth button on server
+    U->>F: Enter backend URL
+    F->>B: GET /.well-known/oauth-authorization-server
+    B-->>F: Metadata (endpoints, scopes)
+    F->>B: POST /oauth/register (dynamic registration)
+    B-->>F: client_id, client_secret
+    U->>F: Click "Authorize"
+    F-->>U: Redirect to backend login
+    U->>B: Login + consent
+    B-->>F: Authorization code (callback)
+    F->>B: POST /oauth/token (code + PKCE)
+    B-->>F: access_token, refresh_token
+    Note over F: Token persisted, auto-refreshed
+```
+
+1. Open the MCP Servers page in the web dashboard
+2. Click the OAuth button on the server entry
+3. Enter the backend's base URL — MCP-Funnel discovers the OAuth metadata automatically
+4. If Dynamic Client Registration is available, the client is registered automatically — otherwise enter credentials manually
+5. Click "Authorize" to complete the login flow
+6. Tokens are persisted and refreshed automatically before each reconnection
 
 ## Configuration
 
+### Core
+
 | Setting | Env Var | Default | Description |
-|---------|---------|---------|-------------|
+|---|---|---|---|
 | Port | `PORT` | `3000` | HTTP server port |
-| Data dir | `DATA_DIR` | `./data` | Data storage directory |
+| Data directory | `DATA_DIR` | `./data` | Persistent data storage |
 | Single-user mode | `SINGLE_USER` | `false` | Run without authentication |
+| Log level | `LOG_LEVEL` | `info` | Winston log level |
+
+### Session
+
+| Setting | Env Var | Default | Description |
+|---|---|---|---|
 | Session secret | `SESSION_SECRET` | (auto-generated) | Session cookie secret |
 | Session max age | `SESSION_MAX_AGE` | `2592000000` (30d) | Session TTL in ms |
-| Admin user | `ADMIN_USER` | (none) | Auto-create admin username |
-| Admin pass | `ADMIN_PASS` | (none) | Auto-create admin password |
-| Log level | `LOG_LEVEL` | `info` | Winston log level |
-| Auth mode | `AUTH_MODE` | `both` | `both`, `oauth`, or `legacy` |
-| OAuth issuer | `OAUTH_ISSUER` | (auto) | OAuth issuer URL |
-| Token lifetime | `OAUTH_TOKEN_LIFETIME` | `3600` | Access token TTL in seconds |
-| Refresh token lifetime | `OAUTH_REFRESH_TOKEN_LIFETIME` | `86400` | Refresh token TTL in seconds |
-| Allowed origins | `ALLOWED_ORIGINS` | (none) | Comma-separated allowed origins |
-| Protocol versions | `MCP_PROTOCOL_VERSIONS` | `2025-11-25,2025-03-26` | Supported MCP versions |
-| Base URL | `BASE_URL` | (auto) | Public URL for OAuth metadata |
 
-The session secret is auto-generated on first start and persisted in `{dataDir}/session-secret.txt` if `SESSION_SECRET` is not set.
+### Admin Bootstrap
+
+| Setting | Env Var | Default | Description |
+|---|---|---|---|
+| Admin user | `ADMIN_USER` | (none) | Auto-create admin on first start |
+| Admin pass | `ADMIN_PASS` | (none) | Admin password (min 8 chars) |
+
+### OAuth 2.1
+
+| Setting | Env Var | Default | Description |
+|---|---|---|---|
+| Auth mode | `AUTH_MODE` | `both` | `both`, `oauth`, or `legacy` |
+| Issuer URL | `OAUTH_ISSUER` | (auto from `BASE_URL`) | JWT issuer claim |
+| Token lifetime | `OAUTH_TOKEN_LIFETIME` | `3600` | Access token TTL in seconds |
+| Refresh lifetime | `OAUTH_REFRESH_TOKEN_LIFETIME` | `86400` | Refresh token TTL in seconds |
+| Base URL | `BASE_URL` | `http://localhost:{PORT}` | Public URL for OAuth metadata |
+
+### Protocol
+
+| Setting | Env Var | Default | Description |
+|---|---|---|---|
+| Allowed origins | `ALLOWED_ORIGINS` | (none) | Comma-separated allowed origins |
+| Protocol versions | `MCP_PROTOCOL_VERSIONS` | `2025-11-25,2025-03-26` | Accepted MCP versions |
 
 ## CLI
 
@@ -167,12 +239,17 @@ Options:
 
 All data is stored as JSON files in the configured data directory:
 
-- `auth.json` — Admin credentials, user accounts, API keys
-- `sessions/` — File-based session store
-- `session-secret.txt` — Auto-generated session secret
-- `stats.json` — Per-user request statistics
-- `servers/{userId}.json` — Per-user MCP server configurations
-- `oauth/` — OAuth clients, JWK private key
+```
+{dataDir}/
+  auth.json                  Admin credentials, user accounts, API keys
+  session-secret.txt         Auto-generated session secret
+  stats.json                 Per-user request statistics
+  sessions/                  File-based session store
+  servers/{userId}.json      Per-user MCP server configurations
+  oauth/
+    clients.json             Registered OAuth clients
+    jwk-private.json         RSA key pair for JWT signing
+```
 
 ## Development
 
@@ -181,7 +258,7 @@ npm install
 npm run dev      # Watch mode with auto-rebuild
 npm run lint     # ESLint check
 npm run lint:fix # ESLint auto-fix
-npm test         # Run unit tests
+npm test         # Run tests (129 tests)
 ```
 
 ## License

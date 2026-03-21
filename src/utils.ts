@@ -1,11 +1,11 @@
 /* MCP-Funnel — Multi-user MCP server management
  * Copyright (c) 2026 Matthias Brusdeylins
  * SPDX-License-Identifier: GPL-3.0-only
- * 100% AI-generated code (vibe-coding with Claude) */
+ * 100% AI-generated code (agentic coding with Claude Code) */
 
 import { Request } from "express"
 
-const VERSION = "1.5.0"
+const VERSION = "1.5.1"
 
 /**
  * Extract a human-readable message from an unknown error value.

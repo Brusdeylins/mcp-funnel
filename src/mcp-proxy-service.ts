@@ -1,7 +1,7 @@
 /* MCP-Funnel — Multi-user MCP server management
  * Copyright (c) 2026 Matthias Brusdeylins
  * SPDX-License-Identifier: GPL-3.0-only
- * 100% AI-generated code (vibe-coding with Claude) */
+ * 100% AI-generated code (agentic coding with Claude Code) */
 
 import { randomUUID } from "node:crypto"
 import type { IncomingMessage, ServerResponse } from "node:http"
@@ -32,6 +32,8 @@ import {
 import logger from "./mcp-funnel-log.js"
 import { VERSION, getErrorMessage } from "./utils.js"
 import { McpServerManager, McpServerEntry, isUrlConfig, isStdioConfig } from "./mcp-server-manager.js"
+import { ensureValidToken } from "./oauth/oauth-client.js"
+import type { BackendOAuthConfig } from "./oauth/oauth-client.js"
 
 import { isMetaTool, getMetaTools, searchTools } from "./mcp-meta-tools.js"
 import type { SearchWords, ToolWithServer, MetaTool } from "./mcp-meta-tools.js"
@@ -152,7 +154,7 @@ class McpProxyService {
         }
     }
 
-    private async createInboundSession (): Promise<{ server: Server; transport: StreamableHTTPServerTransport }> {
+    private createInboundServer (): Server {
         const server = new Server(
             { name: "mcp-funnel", version: VERSION },
             {
@@ -165,8 +167,12 @@ class McpProxyService {
                 }
             }
         )
-
         this.registerInboundHandlers(server)
+        return server
+    }
+
+    private async createInboundSession (): Promise<{ server: Server; transport: StreamableHTTPServerTransport }> {
+        const server = this.createInboundServer()
 
         const transport = new StreamableHTTPServerTransport({
             sessionIdGenerator: () => randomUUID(),
@@ -205,20 +211,7 @@ class McpProxyService {
     }
 
     private async createEphemeralSession (): Promise<{ server: Server; transport: StreamableHTTPServerTransport }> {
-        const server = new Server(
-            { name: "mcp-funnel", version: VERSION },
-            {
-                capabilities: {
-                    tools: { listChanged: true },
-                    prompts: { listChanged: true },
-                    resources: { subscribe: true, listChanged: true },
-                    logging: {},
-                    completions: {}
-                }
-            }
-        )
-
-        this.registerInboundHandlers(server)
+        const server = this.createInboundServer()
 
         const transport = new StreamableHTTPServerTransport({
             sessionIdGenerator: undefined,
@@ -612,6 +605,19 @@ class McpProxyService {
     async connectServer (server: McpServerEntry): Promise<void> {
         logger.info(`[${this.userId}] Connecting to MCP server: ${server.name} (${server.type})`)
 
+        /* Refresh OAuth token before connecting if configured */
+        if (isUrlConfig(server.config) && server.config.oauth?.accessToken) {
+            const oauthConfig = server.config.oauth as unknown as BackendOAuthConfig
+            await ensureValidToken(oauthConfig, (updated) => {
+                if (isUrlConfig(server.config) && server.config.oauth) {
+                    server.config.oauth.accessToken = updated.accessToken
+                    server.config.oauth.refreshToken = updated.refreshToken
+                    server.config.oauth.expiresAt = updated.expiresAt
+                    this.serverManager.updateServer(server.id, { config: server.config })
+                }
+            })
+        }
+
         let transport: SSEClientTransport | StreamableHTTPClientTransport | StdioClientTransport
 
         switch (server.type) {
@@ -837,7 +843,12 @@ class McpProxyService {
     private createSSETransport (server: McpServerEntry): SSEClientTransport {
         if (!isUrlConfig(server.config)) throw new Error("SSE transport requires URL config")
         const url = new URL(server.config.url)
-        const headers = server.config.headers || {}
+        const headers = { ...(server.config.headers || {}) }
+
+        /* Inject OAuth token if configured */
+        if (server.config.oauth?.accessToken) {
+            headers["Authorization"] = `Bearer ${server.config.oauth.accessToken}`
+        }
 
         const options: Record<string, unknown> = {}
 
@@ -852,7 +863,12 @@ class McpProxyService {
     private createHTTPTransport (server: McpServerEntry): StreamableHTTPClientTransport {
         if (!isUrlConfig(server.config)) throw new Error("HTTP transport requires URL config")
         const url = new URL(server.config.url)
-        const headers = server.config.headers || {}
+        const headers = { ...(server.config.headers || {}) }
+
+        /* Inject OAuth token if configured */
+        if (server.config.oauth?.accessToken) {
+            headers["Authorization"] = `Bearer ${server.config.oauth.accessToken}`
+        }
 
         const options: Record<string, unknown> = {}
 
@@ -1048,11 +1064,12 @@ class McpProxyService {
         const backoff = Math.min(state.backoffMs, this.MAX_BACKOFF_MS)
         logger.info(`[${this.userId}] MCP server ${server.name}: scheduling reconnect in ${backoff / 1000}s (attempt ${state.attempts + 1}/${this.MAX_RECONNECT_ATTEMPTS})`)
 
-        state.timeoutId = setTimeout(async () => {
-            state!.timeoutId = null
-            state!.attempts++
-            state!.lastAttempt = Date.now()
-            state!.backoffMs = Math.min(state!.backoffMs * 2, this.MAX_BACKOFF_MS)
+        const s = state
+        s.timeoutId = setTimeout(async () => {
+            s.timeoutId = null
+            s.attempts++
+            s.lastAttempt = Date.now()
+            s.backoffMs = Math.min(s.backoffMs * 2, this.MAX_BACKOFF_MS)
 
             try {
                 await this.reconnectServer(serverId)

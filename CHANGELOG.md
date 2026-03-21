@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.5.1 (2026-03-21)
+
+### Client Credentials Grant
+- Add `client_credentials` grant type to the OAuth 2.1 token endpoint
+- Enables machine-to-machine authentication without user interaction
+- Client owner tracking via `ownerId` in OAuth client registration
+- Advertise `client_credentials` in authorization server metadata
+
+### Backend OAuth Client
+- Add OAuth 2.1 client for backend MCP server authentication
+- OAuth metadata discovery (`.well-known/oauth-authorization-server`, `.well-known/openid-configuration`)
+- Dynamic client registration at backend OAuth servers
+- PKCE S256 authorization code flow with automatic token exchange
+- Automatic token refresh before backend connections (60s buffer)
+- Token persistence in server config — survives restarts
+- Web UI: OAuth configuration modal with discover/authorize workflow
+- Web UI: OAuth button in server actions, OAuth auth type badge
+- API routes: discover, authorize, callback, status, client config, remove
+
 ## 1.5.0 (2026-03-20)
 
 ### MCP Spec 2025-11-25 Compliance

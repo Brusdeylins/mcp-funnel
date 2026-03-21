@@ -34,13 +34,21 @@ export async function createSpecServer (port?: number): Promise<{
         const chunks: Buffer[] = []
         for await (const chunk of req) chunks.push(chunk as Buffer)
         const bodyStr = Buffer.concat(chunks).toString()
-        const body = bodyStr ? JSON.parse(bodyStr) : undefined
+        let body: unknown
+        try {
+            body = bodyStr ? JSON.parse(bodyStr) : undefined
+        }
+        catch {
+            res.writeHead(400, { "Content-Type": "application/json" })
+            res.end(JSON.stringify({ jsonrpc: "2.0", error: { code: -32700, message: "Parse error" }, id: null }))
+            return
+        }
         const rawReq = req as unknown as (http.IncomingMessage & { body?: unknown })
         rawReq.body = body
 
         /* Route by method */
         if (req.method === "POST") {
-            const isInit = body && typeof body === "object" && !Array.isArray(body) && body.method === "initialize"
+            const isInit = body && typeof body === "object" && !Array.isArray(body) && (body as Record<string, unknown>).method === "initialize"
 
             if (isInit) {
                 const transport = new StreamableHTTPServerTransport({
@@ -59,44 +67,30 @@ export async function createSpecServer (port?: number): Promise<{
                 return
             }
 
+            /* Non-initialize POST: look up session */
             const sessionId = req.headers["mcp-session-id"] as string | undefined
             if (sessionId && transports.has(sessionId)) {
-                const transport = transports.get(sessionId)!
-                await transport.handleRequest(rawReq, res, body)
+                await transports.get(sessionId)!.handleRequest(rawReq, res, body)
                 return
             }
 
             res.writeHead(404, { "Content-Type": "application/json" })
             res.end(JSON.stringify({ jsonrpc: "2.0", error: { code: -32000, message: "Session not found" }, id: null }))
-            return
         }
-
-        if (req.method === "GET") {
+        else if (req.method === "GET" || req.method === "DELETE") {
+            /* SSE stream (GET) or session termination (DELETE) */
             const sessionId = req.headers["mcp-session-id"] as string | undefined
             if (sessionId && transports.has(sessionId)) {
-                const transport = transports.get(sessionId)!
-                await transport.handleRequest(rawReq, res, body)
+                await transports.get(sessionId)!.handleRequest(rawReq, res, body)
                 return
             }
             res.writeHead(404)
             res.end()
-            return
         }
-
-        if (req.method === "DELETE") {
-            const sessionId = req.headers["mcp-session-id"] as string | undefined
-            if (sessionId && transports.has(sessionId)) {
-                const transport = transports.get(sessionId)!
-                await transport.handleRequest(rawReq, res, body)
-                return
-            }
-            res.writeHead(404)
+        else {
+            res.writeHead(405)
             res.end()
-            return
         }
-
-        res.writeHead(405)
-        res.end()
     })
 
     const listenPort = port ?? 0
@@ -184,7 +178,7 @@ function registerTools (server: McpServer): void {
     /* spec_logging — sends logging messages at all levels */
     server.registerTool("spec_logging", {
         description: "Sends logging messages at various levels"
-    }, async (_extra) => {
+    }, async () => {
         const levels = ["debug", "info", "notice", "warning", "error", "critical", "alert", "emergency"] as const
         for (const level of levels) {
             await server.sendLoggingMessage({ level, logger: "spec-test", data: `Test ${level} message` })
