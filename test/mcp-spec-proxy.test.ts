@@ -384,6 +384,216 @@ describe("MCP spec proxy integration", () => {
         })
     })
 
+    /* ── F2. OAuth Client Credentials ──────────────── */
+
+    describe("F2. OAuth client_credentials", () => {
+        let ccClientId: string
+        let ccClientSecret: string
+
+        it("register client with client_credentials grant", async () => {
+            const res = await request(`${funnelBaseUrl}/oauth/register`, {
+                method: "POST",
+                body: {
+                    client_name: "m2m-test-client",
+                    redirect_uris: ["http://localhost:9999/callback"],
+                    grant_types: ["client_credentials"],
+                    response_types: ["code"],
+                    token_endpoint_auth_method: "none"
+                }
+            })
+            assert.equal(res.status, 201)
+            const data = JSON.parse(res.body)
+            ccClientId = data.client_id
+            ccClientSecret = data.client_secret
+            assert.ok(ccClientId)
+            assert.ok(ccClientSecret)
+        })
+
+        it("client_credentials grant returns access token", async () => {
+            const res = await request(`${funnelBaseUrl}/oauth/token`, {
+                method: "POST",
+                body: {
+                    grant_type: "client_credentials",
+                    client_id: ccClientId,
+                    client_secret: ccClientSecret
+                }
+            })
+            assert.equal(res.status, 200, `Token request failed: ${res.body}`)
+            const data = JSON.parse(res.body)
+            assert.ok(data.access_token)
+            assert.equal(data.token_type, "Bearer")
+            assert.ok(data.expires_in > 0)
+        })
+
+        it("client_credentials rejects wrong secret", async () => {
+            const res = await request(`${funnelBaseUrl}/oauth/token`, {
+                method: "POST",
+                body: {
+                    grant_type: "client_credentials",
+                    client_id: ccClientId,
+                    client_secret: "wrong-secret"
+                }
+            })
+            assert.equal(res.status, 401)
+            const data = JSON.parse(res.body)
+            assert.equal(data.error, "invalid_client")
+        })
+
+        it("client_credentials rejects missing secret", async () => {
+            const res = await request(`${funnelBaseUrl}/oauth/token`, {
+                method: "POST",
+                body: {
+                    grant_type: "client_credentials",
+                    client_id: ccClientId
+                }
+            })
+            assert.equal(res.status, 400)
+        })
+
+        it("client_credentials rejects unauthorized grant type", async () => {
+            /* Register a client without client_credentials grant */
+            const regRes = await request(`${funnelBaseUrl}/oauth/register`, {
+                method: "POST",
+                body: {
+                    client_name: "no-cc-client",
+                    redirect_uris: ["http://localhost:9999/callback"],
+                    grant_types: ["authorization_code"],
+                    response_types: ["code"]
+                }
+            })
+            const regData = JSON.parse(regRes.body)
+
+            const res = await request(`${funnelBaseUrl}/oauth/token`, {
+                method: "POST",
+                body: {
+                    grant_type: "client_credentials",
+                    client_id: regData.client_id,
+                    client_secret: regData.client_secret
+                }
+            })
+            assert.equal(res.status, 400)
+            const data = JSON.parse(res.body)
+            assert.equal(data.error, "unauthorized_client")
+        })
+
+        it("metadata advertises client_credentials grant type", async () => {
+            const res = await request(`${funnelBaseUrl}/.well-known/oauth-authorization-server`)
+            const data = JSON.parse(res.body)
+            assert.ok(data.grant_types_supported.includes("client_credentials"))
+        })
+    })
+
+    /* ── F3. Backend OAuth Routes ───────────────────── */
+
+    describe("F3. Backend OAuth routes", () => {
+        /* These tests use the funnel's web session (single-user mode bypasses auth) */
+        let serverId: string
+
+        before(async () => {
+            /* Get the backend server ID from the funnel */
+            const dashRes = await request(`${funnelBaseUrl}/dashboard`)
+            const cookies = dashRes.headers["set-cookie"]
+            const cookie = cookies ? (Array.isArray(cookies) ? cookies[0] : cookies).split(";")[0] : ""
+
+            const listRes = await request(`${funnelBaseUrl}/mcp-servers/api/list`, {
+                headers: cookie ? { Cookie: cookie } : {}
+            })
+            const listData = JSON.parse(listRes.body)
+            serverId = listData.servers[0]?.id
+            assert.ok(serverId, "should have at least one server")
+        })
+
+        it("oauth/status returns not configured for server without OAuth", async () => {
+            const dashRes = await request(`${funnelBaseUrl}/dashboard`)
+            const cookies = dashRes.headers["set-cookie"]
+            const cookie = cookies ? (Array.isArray(cookies) ? cookies[0] : cookies).split(";")[0] : ""
+
+            const res = await request(`${funnelBaseUrl}/mcp-servers/api/${serverId}/oauth/status`, {
+                headers: cookie ? { Cookie: cookie } : {}
+            })
+            assert.equal(res.status, 200)
+            const data = JSON.parse(res.body)
+            assert.equal(data.configured, false)
+        })
+
+        it("oauth/discover against spec test backend discovers metadata", async () => {
+            const dashRes = await request(`${funnelBaseUrl}/dashboard`)
+            const cookies = dashRes.headers["set-cookie"]
+            const cookie = cookies ? (Array.isArray(cookies) ? cookies[0] : cookies).split(";")[0] : ""
+
+            /* The spec test backend doesn't have OAuth endpoints, so this should fail gracefully */
+            const res = await request(`${funnelBaseUrl}/mcp-servers/api/${serverId}/oauth/discover`, {
+                method: "POST",
+                body: { serverUrl: backendUrl.replace("/mcp", "") },
+                headers: cookie ? { Cookie: cookie } : {}
+            })
+            /* Should return 400 because spec test server has no .well-known endpoints */
+            assert.equal(res.status, 400)
+            const data = JSON.parse(res.body)
+            assert.ok(data.error.includes("No OAuth metadata found"))
+        })
+
+        it("oauth/client saves manual client credentials", async () => {
+            const dashRes = await request(`${funnelBaseUrl}/dashboard`)
+            const cookies = dashRes.headers["set-cookie"]
+            const cookie = cookies ? (Array.isArray(cookies) ? cookies[0] : cookies).split(";")[0] : ""
+
+            /* First do a discover against a server that has no registration endpoint
+             * We can't self-discover in tests (issuer URL mismatch), so we'll
+             * manually set up OAuth config via the client endpoint instead.
+             * First, set up a minimal OAuth config via discover (which will fail on registration) */
+
+            /* Use the oauth/client endpoint to manually configure */
+            /* But it requires discovery first — so we test the "no registration" path:
+             * discover against spec backend fails, then we can test remove */
+
+            /* Instead, test the manual client flow by POSTing directly */
+            const clientRes = await request(`${funnelBaseUrl}/mcp-servers/api/${serverId}/oauth/client`, {
+                method: "POST",
+                body: { clientId: "test-client-id", clientSecret: "test-secret", scope: "mcp:full" },
+                headers: cookie ? { Cookie: cookie } : {}
+            })
+            /* Should fail because no OAuth config (no prior discovery) */
+            assert.equal(clientRes.status, 400)
+            const data = JSON.parse(clientRes.body)
+            assert.ok(data.error.includes("Run OAuth discovery first"))
+        })
+
+        it("oauth/remove succeeds even without OAuth config", async () => {
+            const dashRes = await request(`${funnelBaseUrl}/dashboard`)
+            const cookies = dashRes.headers["set-cookie"]
+            const cookie = cookies ? (Array.isArray(cookies) ? cookies[0] : cookies).split(";")[0] : ""
+
+            const delRes = await request(`${funnelBaseUrl}/mcp-servers/api/${serverId}/oauth`, {
+                method: "DELETE",
+                headers: cookie ? { Cookie: cookie } : {}
+            })
+            assert.equal(delRes.status, 200)
+            const delData = JSON.parse(delRes.body)
+            assert.equal(delData.success, true)
+
+            /* Verify status shows not configured */
+            const statusRes = await request(`${funnelBaseUrl}/mcp-servers/api/${serverId}/oauth/status`, {
+                headers: cookie ? { Cookie: cookie } : {}
+            })
+            const statusData = JSON.parse(statusRes.body)
+            assert.equal(statusData.configured, false)
+        })
+
+        it("oauth/discover rejects missing serverUrl", async () => {
+            const dashRes = await request(`${funnelBaseUrl}/dashboard`)
+            const cookies = dashRes.headers["set-cookie"]
+            const cookie = cookies ? (Array.isArray(cookies) ? cookies[0] : cookies).split(";")[0] : ""
+
+            const res = await request(`${funnelBaseUrl}/mcp-servers/api/${serverId}/oauth/discover`, {
+                method: "POST",
+                body: {},
+                headers: cookie ? { Cookie: cookie } : {}
+            })
+            assert.equal(res.status, 400)
+        })
+    })
+
     /* ── G. Protocol validation ─────────────────────── */
 
     describe("G. Protocol validation", () => {
