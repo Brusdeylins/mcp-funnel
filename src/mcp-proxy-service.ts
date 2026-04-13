@@ -135,6 +135,7 @@ class McpProxyService {
                 const msg = getErrorMessage(error)
                 logger.error(`[${this.userId}] Failed to connect to MCP server ${server.name}: ${msg}`)
                 this.serverManager.updateConnectionStatus(server.id, false, msg)
+                this.scheduleReconnect(server.id)
             }
         }
 
